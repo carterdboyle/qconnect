@@ -9,9 +9,9 @@
   <script type="module">
     import { initOQS, diliKeypair, kyberKeypair, diliSign, kyberDecaps } from "/pq/oqsClient.js";
 
-    const b64u = (u) => btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_'.replace(/=+$/, ''));
+    const b64u = (u) => btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const unb64u = (s) => new Uint8Array(atob(s.replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
-    const enc = (s) => new TextEncode().encode(s);
+    const enc = (s) => new TextEncoder().encode(s);
 
     (async () => {
       await initOQS();

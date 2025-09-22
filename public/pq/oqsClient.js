@@ -1,10 +1,10 @@
 let mod;
 export async function initOQS() {
   if (mod) return mod;
-  const factory = (await import("/oqs/oqs.js?v=7")).default;
+  const factory = (await import("/oqs/oqs.js")).default;
 
   mod = await factory({ 
-    locateFile: (p) => p.endsWith(".wasm") ? "/oqs/oqs.wasm?v=7" : p
+    locateFile: (p) => p.endsWith(".wasm") ? "/oqs/oqs.wasm" : p
   });
 
   return mod;

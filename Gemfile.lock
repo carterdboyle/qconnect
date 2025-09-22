@@ -86,6 +86,14 @@ GEM
     drb (2.2.3)
     erb (5.0.2)
     erubi (1.13.1)
+    ffi (1.17.2-aarch64-linux-gnu)
+    ffi (1.17.2-aarch64-linux-musl)
+    ffi (1.17.2-arm-linux-gnu)
+    ffi (1.17.2-arm-linux-musl)
+    ffi (1.17.2-arm64-darwin)
+    ffi (1.17.2-x86_64-darwin)
+    ffi (1.17.2-x86_64-linux-gnu)
+    ffi (1.17.2-x86_64-linux-musl)
     globalid (1.2.1)
       activesupport (>= 6.1)
     i18n (1.14.7)
@@ -224,6 +232,7 @@ PLATFORMS
 
 DEPENDENCIES
   debug
+  ffi (~> 1.16)
   propshaft
   puma (>= 5.0)
   rails (~> 8.0.2, >= 8.0.2.1)
