@@ -1,12 +1,13 @@
 class RegisterController < ApplicationController
   protect_from_forgery with: :null_session
+  skip_before_action :verify_authenticity_token
 
   # POST /v1/register/init
   # in: { handle, ps (b64url), pk (b64url)}
   # out: { user_id, m (b64url 16B), c (b64url Kyber CT) }
   def init
     handle = params.require(:handle)
-    ps_b = Base64.urlsage_decode64(params.require(:ps))
+    ps_b = Base64.urlsafe_decode64(params.require(:ps))
     pk_b = Base64.urlsafe_decode64(params.require(:pk))
 
     user = User.create!(handle:)
@@ -26,12 +27,12 @@ class RegisterController < ApplicationController
       c: Base64.urlsafe_encode64(c)
     }
   rescue  => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   end
 
   def verify
     user_id = params.require(:user_id)
-    s_b = Base64.urlsafe_b64decode(params.require(:s))
+    s_b = Base64.urlsafe_decode64(params.require(:s))
     k_prime = Base64.urlsafe_decode64(params.require(:k_prime))
 
     cache = Rails.cache.read("reg:#{user_id}") || (raise "challenge missing/expired")
@@ -54,6 +55,6 @@ class RegisterController < ApplicationController
 
     render json: { ok: true }
   rescue => e
-    render json: { ok: false, error: e.message }, status: :unprocessable_entity
+    render json: { ok: false, error: e.message }, status: :unprocessable_content
   end
 end
