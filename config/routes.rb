@@ -11,4 +11,9 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   # root "posts#index"
+  root "home#index"
+  scope :v1 do
+    post "register/init", to: "register#init"
+    post "register/verify", to: "register#verify"
+  end
 end
