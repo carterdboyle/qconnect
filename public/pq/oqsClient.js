@@ -49,3 +49,8 @@ export async function kyberDecaps(sk, ct) {
   const k = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_kyber_k_ptr", "number", [])(), M.cwrap("get_kyber_k_len", "number", [])());
   return k.slice(0);
 }
+
+export async function deriveKPrimeFromSS(ssUint8) {
+  const dig = await crypto.subtle.digest("SHA-256", ssUint8);
+  return new Uint8Array(dig).slice(0, 16);
+}

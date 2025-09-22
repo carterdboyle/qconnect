@@ -34,6 +34,19 @@ static OQS_SIG *sig_new_runtime() {
 
 // ================== KEM (Kyber 512) ======================= //
 
+int pqkem512_name(char *out, size_t out_len) {
+  if (!out || out_len == 0) return 2;
+  OQS_KEM *kem = kem_new_runtime();
+  if (!kem) return 1;
+  const char *name = kem->method_name ? kem->method_name : "unknown";
+  size_t n = strlen(name);
+  if (n >= out_len) n = out_len - 1;
+  memcpy(out, name, n);
+  out[n] = '\0';
+  OQS_KEM_free(kem);
+  return 0;
+}
+
 int pqkem512_pk_len() {
   OQS_KEM *kem = kem_new_runtime();
   if (!kem) return -1;
