@@ -22,16 +22,16 @@ export async function diliKeypair() {
 export async function diliSign(sk, msg) {
   const M = await initOQS();
 
-  if (!M._dili_selected_name) console.warn("No dili_sected_name export");
-  else {
-    const ptr = M._dili_selected_name();
-    console.log("CLIENT SIG:", M.UTF8ToString(ptr));
-  }
+  // if (!M._dili_selected_name) console.warn("No dili_sected_name export");
+  // else {
+  //   const ptr = M._dili_selected_name();
+  //   console.log("CLIENT SIG:", M.UTF8ToString(ptr));
+  // }
 
-  const expSkLen = M.cwrap("get_dili_sk_len", "number", [])();
-  if (sk.length !== expSkLen) {
-    throw new Error(`bad secret key length: got ${sk.length}, expected ${expSkLen})`);
-  }
+  // const expSkLen = M.cwrap("get_dili_sk_len", "number", [])();
+  // if (sk.length !== expSkLen) {
+  //   throw new Error(`bad secret key length: got ${sk.length}, expected ${expSkLen})`);
+  // }
 
   const skPtr = M._malloc(sk.length); M.HEAPU8.set(sk, skPtr);
   const msgPtr = M._malloc(msg.length); M.HEAPU8.set(msg, msgPtr);

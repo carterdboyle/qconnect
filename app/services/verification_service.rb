@@ -11,9 +11,7 @@ class VerificationService
     def self.verify(ps:, m:, sig:)  
 
     # Verify signature over M using PS
-    ok = OQS::Dilithium2.verify(ps, m, sig)
-    return { verified: false, error: "bad_signature" } unless ok
-    ok
+    OQS::Dilithium2.verify(ps, m, sig)
   rescue => e
     { verified: false, error: e.message }
   end

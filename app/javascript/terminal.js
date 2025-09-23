@@ -171,7 +171,7 @@ const commands = {
         })
       });
       if (!r1.ok) throw new Error("init " + r1.status);
-      const { m_b64, ct_b64 } = await r1.json();
+      const { m_b64, ct_b64, nonce } = await r1.json();
 
       // 2) compute S and K'
       const SS = unb64(rec.SS_b64);
@@ -190,7 +190,8 @@ const commands = {
         body: JSON.stringify({
           handle:  state.handle,
           sig_b64: b64u(S),
-          kp_b64:  b64u(Kp16)
+          kp_b64:  b64u(Kp16),
+          nonce: nonce
         })
       });
       if (!r2.ok) throw new Error("verify " + r2.status);
@@ -215,7 +216,7 @@ const commands = {
         body: JSON.stringify({ handle: state.handle })
       });
       if (!r1.ok) throw new Error("challenge " + r1.status);
-      const { challenge_b64 } = await r1.json();
+      const { challenge_b64, nonce } = await r1.json();
 
       // 2) sign the challenge with SS (Dilithium)
       const SS = unb64(rec.SS_b64);
@@ -226,7 +227,7 @@ const commands = {
       const r2 = await fetch("/v1/login/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature_b64: b64u(S) })
+        body: JSON.stringify({ signature_b64: b64u(S), nonce: nonce })
       });
       if (!r2.ok) throw new Error("submit " + r2.status);
       const done = await r2.json();

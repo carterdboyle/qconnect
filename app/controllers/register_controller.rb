@@ -20,8 +20,9 @@ class RegisterController < ApplicationController
     handle = params.require(:handle)
     sig_b64 = params.require(:sig_b64)
     kp_b64 = params.require(:kp_b64)
+    nonce = params.require(:nonce)
     
-    render json: RegistrationService.verify(handle:, sig_b64:, kp_b64:)
+    render json: RegistrationService.verify(handle:, sig_b64:, kp_b64:, nonce:)
   rescue => e
     render json: { ok: false, error: e.message }, status: :unprocessable_content
   end

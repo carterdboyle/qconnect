@@ -18,15 +18,19 @@ class RegistrationService
 
     # Signing challenge
     m = SecureRandom.random_bytes(256)
-    Rails.cache.write("reg:#{handle}", { ps:, pk:, m:, k: }, expires_in: 5.minutes)
 
-    { m_b64: B64u.enc(m), ct_b64: B64u.enc(ct) }
+    # Short-lived nonce to bind to this init
+    nonce = SecureRandom.hex(16)
+
+    Rails.cache.write("reg:#{handle}:#{nonce}", { ps:, pk:, m:, k: }, expires_in: 2.minutes)
+
+    { m_b64: B64u.enc(m), ct_b64: B64u.enc(ct), nonce:}
   end
 
   # Step 2: client posts back K' and signature S over M (with PS)
   # in: handle, sig_b64u, k_prime_b64u
-  def self.verify(handle:, sig_b64:, kp_b64:)
-    state = Rails.cache.read("reg:#{handle}")
+  def self.verify(handle:, sig_b64:, kp_b64:, nonce:)
+    state = Rails.cache.read("reg:#{handle}:#{nonce}")
     return { verified: false, error: "expired" } unless state
 
     ps, pk, m, k = state.values_at(:ps, :pk, :m, :k)
@@ -45,7 +49,7 @@ class RegistrationService
       UserKey.create!(user_id: user.id, ps: ps, pk: pk)
     end
 
-    Rails.cache.delete("reg:#{handle}")
+    Rails.cache.delete("reg:#{handle}:#{nonce}")
     { verified: true }
   rescue ActiveRecord::RecordNotUnique
     { verified: false, error: "handle_taken" }
