@@ -17,7 +17,7 @@ class RegistrationService
     ct, k = OQS::Kyber512.encaps_and_k(pk);
 
     # Signing challenge
-    m = SecureRandom.random_bytes(16)
+    m = SecureRandom.random_bytes(256)
     Rails.cache.write("reg:#{handle}", { ps:, pk:, m:, k: }, expires_in: 5.minutes)
 
     { m_b64: B64u.enc(m), ct_b64: B64u.enc(ct) }

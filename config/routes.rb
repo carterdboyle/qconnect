@@ -16,4 +16,9 @@ Rails.application.routes.draw do
     post "init", to: "register#init"
     post "verify", to: "register#verify"
   end
+
+  scope "/v1/login" do
+    post "challenge", to: "login#challenge"
+    post "submit", to: "login#submit"
+  end
 end

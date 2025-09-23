@@ -203,9 +203,41 @@ const commands = {
   },
 
   async login() {
-    print("login not yet wired—add /v1/login/* routes first.", "muted");
+    if (!state.handle) return print("set a handle first", "err");
+    const rec = await loadKeys(state.handle);
+    if (!rec) return print("no keys; run genkeys", "err");
+
+    try {
+      // 1) ask server for challenge (stored in session server-side)
+      const r1 = await fetch("/v1/login/challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle: state.handle })
+      });
+      if (!r1.ok) throw new Error("challenge " + r1.status);
+      const { challenge_b64 } = await r1.json();
+
+      // 2) sign the challenge with SS (Dilithium)
+      const SS = unb64(rec.SS_b64);
+      const M  = unb64(challenge_b64);
+      const S  = await signMSG(SS, M);
+
+      // 3) send signature back; server retrieves handle & challenge from session
+      const r2 = await fetch("/v1/login/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature_b64: b64u(S) })
+      });
+      if (!r2.ok) throw new Error("submit " + r2.status);
+      const done = await r2.json();
+
+      if (done.ok) print("logged in ✔ user_id=" + done.user_id, "ok");
+      else         print("login failed: " + JSON.stringify(done), "err");
+    } catch (e) {
+      print("login error: " + e.message, "err");
+    }
   }
-};
+}
 
 // ---------- REPL ----------
 input.addEventListener("keydown", async (e) => {
