@@ -21,13 +21,41 @@ export async function diliKeypair() {
 
 export async function diliSign(sk, msg) {
   const M = await initOQS();
+
+  if (!M._dili_selected_name) console.warn("No dili_sected_name export");
+  else {
+    const ptr = M._dili_selected_name();
+    console.log("CLIENT SIG:", M.UTF8ToString(ptr));
+  }
+
+  const expSkLen = M.cwrap("get_dili_sk_len", "number", [])();
+  if (sk.length !== expSkLen) {
+    throw new Error(`bad secret key length: got ${sk.length}, expected ${expSkLen})`);
+  }
+
   const skPtr = M._malloc(sk.length); M.HEAPU8.set(sk, skPtr);
   const msgPtr = M._malloc(msg.length); M.HEAPU8.set(msg, msgPtr);
   const rc = M.cwrap("dili_sign", "number", ["number", "number", "number", "number"])(skPtr, sk.length, msgPtr, msg.length);
   M._free(msgPtr); M._free(skPtr);
-  if (rc !== 0) throw new Error("sign failed");
-  const sig = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_dili_sig_ptr", "number", [])(), M.cwrap("get_dili_sig_len", "number", [])());
-  return sig.slice(0);
+  if (rc !== 0) throw new Error(`sign failed rc=${rc}`);
+
+  const sigLen = M.cwrap("get_dili_sig_len", "number", [])();
+  const sigPtr = M.cwrap("get_dili_sig_ptr", "number", [])();
+  
+  const sig = new Uint8Array(M.HEAPU8.buffer, sigPtr, sigLen).slice(0);
+  
+  return sig;
+}
+
+export async function diliVerify(pk, sig, msg) {
+  const M = await initOQS();
+  const pkPtr = M._malloc(pk.length); M.HEAPU8.set(pk, pkPtr);
+  const sigPtr = M._malloc(sig.length); M.HEAPU8.set(sig, sigPtr);
+  const msgPtr = M._malloc(msg.length); M.HEAPU8.set(msg, msgPtr);
+  const rc = M.cwrap("dili_verify", "number", ["number", "number", "number", "number", "number", "number"])(pkPtr, pk.length, msgPtr, msg.length, sigPtr, sig.length);
+  M._free(msgPtr); M._free(pkPtr); M._free(sigPtr);
+  if (rc !== 0) throw new Error("verify failed");
+  return 0;
 }
 
 export async function kyberKeypair() {

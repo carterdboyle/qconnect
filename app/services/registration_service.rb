@@ -20,16 +20,7 @@ class RegistrationService
     m = SecureRandom.random_bytes(16)
     Rails.cache.write("reg:#{handle}", { ps:, pk:, m:, k: }, expires_in: 5.minutes)
 
-    out = { m_b64: B64u.enc(m), ct_b64: B64u.enc(ct) }
-    # if !!debug
-    #   kem_name = OQS::Kyber512.respond_to?(:kem_name) ? OQS::Kyber512.kem_name : "unknown"
-    #   out[:_kem] = kem_name
-    #   out[:_k_hex] = k.unpack1("H*")
-    #   out[:_ct_len] = ct.bytesize
-    #   out[:_pk_len] = pk.bytesize
-    #   out[:_ct_sha256] = Digest::SHA256.hexdigest(ct)
-    # end
-    out
+    { m_b64: B64u.enc(m), ct_b64: B64u.enc(ct) }
   end
 
   # Step 2: client posts back K' and signature S over M (with PS)
@@ -39,7 +30,7 @@ class RegistrationService
     return { verified: false, error: "expired" } unless state
 
     ps, pk, m, k = state.values_at(:ps, :pk, :m, :k)
-    # CHeck K == K'
+    # Check K == K'
     k_prime = B64u.dec(kp_b64)
 
     return { verified: false, error: "kem_mismatch" } unless k_prime.bytesize == 16 && k_prime == k
