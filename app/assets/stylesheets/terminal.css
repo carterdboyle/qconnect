@@ -1,0 +1,60 @@
+@import url("https://fonts.googleapis.com/css2?family=VT323&display=swap");
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: #000;                           /* pure black */
+  color: #66ff99;                             /* phosphor */
+  font-family: "VT323", ui-monospace, monospace;
+  font-size: 22px;                            /* VT323 is compact; bump size */
+  line-height: 1.25;
+}
+
+:root { --phosphor:#66ff99; --dim:#2aa160; }
+.frame { max-width: 980px; margin: 24px auto; padding: 16px; }
+.bezel {
+  border: 2px solid var(--phosphor);
+  padding: 16px;
+  position: relative;
+  box-shadow: 0 0 20px rgba(102,255,153,.15) inset;
+}
+.hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  color: var(--dim); opacity: .9; margin-bottom: 6px;
+}
+
+.scan {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(102,255,153,.06),
+      rgba(102,255,153,.06) 2px,
+      rgba(0,0,0,0) 3px,
+      rgba(0,0,0,0) 4px
+    );
+  mix-blend-mode: screen;
+}
+#terminal {
+  height: 60vh; min-height: 420px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  padding: 12px; background: rgba(0,0,0,.6); border: 1px solid var(--dim);
+}
+
+.line { display: flex; align-items: baseline; gap: 8px; }
+.prompt { color: var(--phosphor); }
+.muted  { color: var(--dim); }
+.ok     { color: #9affc7; }
+.err    { color: #ff7f7f; }
+.kbd    { background: #003300; border: 1px solid var(--dim); padding: 0 4px; }
+
+#input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--phosphor);
+  font: inherit;
+  caret-color: var(--phosphor);
+}

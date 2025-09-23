@@ -1,0 +1,31 @@
+<div class="frame">
+  <div class="bezel">
+    <div class="hdr">
+      <span>QConnect Secure Console v0.1 (ML-DSA-44 / ML-KEM-512)</span>
+      <span>CLIENT-SIDE ONLY</span>
+    </div>
+
+    <div id="terminal" aria-live="polite" aria-label="QConnect terminal output"></div>
+    <div class="scan"></div>
+
+    <div class="hdr" style="margin-top:8px">
+      <div>
+        <span class="muted">Type</span> <span class="kbd">help</span>
+        <span class="muted">for commands.</span>
+      </div>
+    </div>
+
+    <div class="line">
+      <span class="prompt">$</span>
+      <input id="input" autocomplete="off" spellcheck="false" aria-label="QConnect terminal input" />
+    </div>
+
+    <div class="footer">
+      Secrets persist in IndexedDB; never sent unless required by protocol.
+      Consider passphrase-wrapping SS/SK with WebCrypto for production hardening.
+    </div>
+  </div>
+</div>
+
+<%= stylesheet_link_tag "terminal", "data-turbo-track": "reload" %>
+<%= javascript_import_module_tag "terminal" %>

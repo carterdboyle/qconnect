@@ -98,6 +98,10 @@ GEM
       activesupport (>= 6.1)
     i18n (1.14.7)
       concurrent-ruby (~> 1.0)
+    importmap-rails (2.2.2)
+      actionpack (>= 6.0.0)
+      activesupport (>= 6.0.0)
+      railties (>= 6.0.0)
     io-console (0.8.1)
     irb (1.15.2)
       pp (>= 0.6.0)
@@ -206,6 +210,8 @@ GEM
     sqlite3 (2.7.3-x86_64-darwin)
     sqlite3 (2.7.3-x86_64-linux-gnu)
     sqlite3 (2.7.3-x86_64-linux-musl)
+    stimulus-rails (1.3.4)
+      railties (>= 6.0.0)
     stringio (3.1.7)
     thor (1.4.0)
     timeout (0.4.3)
@@ -233,10 +239,12 @@ PLATFORMS
 DEPENDENCIES
   debug
   ffi (~> 1.16)
+  importmap-rails
   propshaft
   puma (>= 5.0)
   rails (~> 8.0.2, >= 8.0.2.1)
   sqlite3 (>= 2.1)
+  stimulus-rails
   tzinfo-data
 
 BUNDLED WITH
