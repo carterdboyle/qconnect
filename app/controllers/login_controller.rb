@@ -1,6 +1,4 @@
 class LoginController < ApplicationController
-  protect_from_forgery with: :null_session
-
   # POST /v1/login/challenge
   # in:  { handle }
   # out: { challenge_b64 }
@@ -25,7 +23,7 @@ class LoginController < ApplicationController
     render json: { message: "Handle required" }, status: :bad_request
   end
 
-    # POST /v1/login/submit
+  # POST /v1/login/submit
   # in:  { signature_b64 }
   # out: { ok, user_id }
   def submit

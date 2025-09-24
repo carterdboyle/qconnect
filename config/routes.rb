@@ -21,4 +21,15 @@ Rails.application.routes.draw do
     post "challenge", to: "login#challenge"
     post "submit", to: "login#submit"
   end
+
+  scope "/v1/contacts" do
+    # requests
+    post "requests", to: "contact_requests#create" #send
+    get "requests", to: "contact_requests#index" #list pending
+    post "requests/:id/respond", to: "contact_requests#respond" #accept/decline
+
+    # address book
+    get "", to: "contacts#index" # my contacts
+    get ":handle", to: "contacts#show" # one contact by handle
+  end
 end

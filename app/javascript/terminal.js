@@ -14,14 +14,25 @@ const b64u  = (u8) => btoa(String.fromCharCode(...u8)).replace(/\+/g,'-').replac
 const unb64 = (s) => { s=s.replace(/-/g,'+').replace(/_/g,'/'); const pad=s.length%4===2?'==':s.length%4===3?'=':''; const bin=atob(s+pad); return Uint8Array.from(bin,c=>c.charCodeAt(0)); };
 
 // ---------- IndexedDB ----------
-const DB_NAME = "qpigeon", STORE = "keys";
+const DB_NAME = "qconnect";
+const STORE_KEYS = "keys";
+const STORE_CONTACTS = "contacts";
+
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 1);
+    const r = indexedDB.open(DB_NAME, 3);
     r.onupgradeneeded = () => {
       const db = r.result;
-      if (!db.objectStoreNames.contains(STORE))
-        db.createObjectStore(STORE, { keyPath: "handle" });
+      if (!db.objectStoreNames.contains(STORE_KEYS))
+        db.createObjectStore(STORE_KEYS, { keyPath: "handle" });
+
+      // composite key
+      if (db.objectStoreNames.contains(STORE_CONTACTS)) {
+        db.deleteObjectStore(STORE_CONTACTS);
+      }
+      const s = db.createObjectStore(STORE_CONTACTS, { keyPath: ["owner", "handle"] });
+      s.createIndex("by_owner", "owner", { unique: false });
+      s.createIndex("by_owner_handle", ["owner", "handle"], { unique: true });
     };
     r.onsuccess = () => res(r.result);
     r.onerror   = () => rej(r.error);
@@ -30,17 +41,17 @@ function openDB() {
 async function saveKeys(rec) {
   const db = await openDB();
   await new Promise((res, rej) => {
-    const tx = db.transaction(STORE, "readwrite");
+    const tx = db.transaction(STORE_KEYS, "readwrite");
     tx.oncomplete = () => res();
     tx.onerror    = () => rej(tx.error);
-    tx.objectStore(STORE).put(rec);
+    tx.objectStore(STORE_KEYS).put(rec);
   });
 }
 async function loadKeys(handle) {
   const db = await openDB();
   return new Promise((res, rej) => {
-    const tx = db.transaction(STORE, "readonly");
-    const rq = tx.objectStore(STORE).get(handle);
+    const tx = db.transaction(STORE_KEYS, "readonly");
+    const rq = tx.objectStore(STORE_KEYS).get(handle);
     rq.onsuccess = () => res(rq.result || null);
     rq.onerror   = () => rej(rq.error);
   });
@@ -48,11 +59,90 @@ async function loadKeys(handle) {
 async function wipeKeys(handle) {
   const db = await openDB();
   return new Promise((res, rej) => {
-    const tx = db.transaction(STORE, "readwrite");
+    const tx = db.transaction(STORE_KEYS, "readwrite");
     tx.oncomplete = () => res();
     tx.onerror    = () => rej(tx.error);
-    tx.objectStore(STORE).delete(handle);
+    tx.objectStore(STORE_KEYS).delete(handle);
   });
+}
+
+async function saveContact(owner, rec) {
+  const db = await openDB();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONTACTS, "readwrite");
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+    tx.objectStore(STORE_CONTACTS).put({
+      owner,
+      handle: rec.handle,
+      user_id: rec.user_id,
+      ps_b64: rec.ps_b64,
+      pk_b64: rec.pk_b64,
+      alias: rec.alias || null,
+      added_at: rec.added_at || Date.now()
+    });
+  });
+}
+
+async function clearContactsFor(owner) {
+  const db = await openDB();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONTACTS, "readwrite");
+    const idx = tx.objectStore(STORE_CONTACTS).index("by_owner");
+    const range = IDBKeyRange.only(owner);
+    idx.openKeyCursor(range).onsuccess = (e) => {
+      const cur = e.target.result;
+      if (cur) {
+        tx.objectStore(STORE_CONTACTS).delete(cur.primaryKey);
+        cur.continue();
+      }
+    };
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  })
+}
+
+async function getContact(handle) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONTACTS, "readonly");
+    const rq = tx.objectStore(STORE_CONTACTS).get(handle);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+
+async function listContactsLocal(owner) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONTACTS, "readonly");
+    const idx = tx.objectStore(STORE_CONTACTS).index("by_owner");
+    const out = [];
+    idx.openCursor(IDBKeyRange.only(owner)).onsuccess = (e) => {
+      const cur = e.target.result;
+      if (cur) { out.push(cur.value); cur.continue(); }
+    }
+    tx.oncomplete = () => res(out);
+    tx.onerror = () => rej(tx.error);
+  })
+}
+
+const CSRF = document.querySelector('meta[name="csrf-token"')?.content
+
+function xfetch(url, opts ={}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers||{})};
+  if (CSRF) headers['X-CSRF-Token'] = CSRF;
+  return fetch(url, {credentials: 'same-origin', ...opts, headers });
+}
+
+// List contacts (server), cache to IndexedDB, then show cached view
+async function syncContacts(owner) {
+  const r = await xfetch("/v1/contacts");
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const arr = await r.json();
+
+  await clearContactsFor(owner);
+  for (const c of arr) await saveContact(owner, c);
 }
 
 // ---------- OQS via your oqsClient.js ----------
@@ -94,14 +184,22 @@ let state = { handle: null };
 const commands = {
   help() {
     print("COMMANDS:", "muted");
-    print("  handle <name>     # set active handle");
-    print("  status            # show local key status");
-    print("  genkeys           # generate keys and store in IndexedDB");
-    print("  show ps|pk        # print your public keys");
-    print("  register          # run server registration flow");
-    print("  login             # run server login flow");
-    print("  wipe              # delete keys for active handle");
-    print("  clear             # clear screen");
+    print("  handle <name>              # set active handle");
+    print("  status                     # show local key status");
+    print("KEY MANAGEMENT:", "muted")
+    print("  genkeys                    # generate keys and store in IndexedDB");
+    print("  show ps|pk                 # print your public keys");
+    print("  wipe                       # delete keys for active handle");
+    print("AUTHENTICATION:", "muted")
+    print("  register                   # run server registration flow");
+    print("  login                      # run server login flow");
+    print("CONTACTS:", "muted")
+    print("  request <handle> [note...] # send a contact request to user")
+    print("  requests                   # view pending contact requests")
+    print("  accept <request_id>        # accept a request from a given contact")
+    print("  decline <request_id>       # decline a request from a given contact")
+    print("  contacts                   # view contact book")
+    print("  clear                      # clear screen");
   },
 
   handle(args) {
@@ -161,7 +259,7 @@ const commands = {
 
     try {
       // 1) send public keys
-      const r1 = await fetch("/v1/register/init", {
+      const r1 = await xfetch("/v1/register/init", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -184,7 +282,7 @@ const commands = {
       const Kp16   = await deriveKPrimeFromSS(ss_raw); // SHA-256 -> first 16 bytes
 
       // 3) reply with signature + K' (16 bytes)
-      const r2 = await fetch("/v1/register/verify", {
+      const r2 = await xfetch("/v1/register/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -210,7 +308,7 @@ const commands = {
 
     try {
       // 1) ask server for challenge (stored in session server-side)
-      const r1 = await fetch("/v1/login/challenge", {
+      const r1 = await xfetch("/v1/login/challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ handle: state.handle })
@@ -224,7 +322,7 @@ const commands = {
       const S  = await signMSG(SS, M);
 
       // 3) send signature back; server retrieves handle & challenge from session
-      const r2 = await fetch("/v1/login/submit", {
+      const r2 = await xfetch("/v1/login/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signature_b64: b64u(S), nonce: nonce })
@@ -237,8 +335,93 @@ const commands = {
     } catch (e) {
       print("login error: " + e.message, "err");
     }
+  },
+
+  async request(args) {
+    const to = args[0];
+    if (!to) return print("usage: request <handle> [note...]", "err");
+    const note = args.slice(1).join(" ");
+    try {
+      const r = await xfetch("/v1/contacts/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle: to, note })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const js = await r.json();
+      print(`request send -> id=${js.id} to=${js.recipient_handle}`, "ok");
+    } 
+    catch (e) { 
+      print("request error: " + e.message, "err"); 
+    }
+  },
+
+  async requests() {
+    try {
+      const r = await xfetch("/v1/contacts/requests");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const arr = await r.json();
+      if (!arr.length) return print("no pending requests", "muted");
+      arr.forEach(it => print(`id=${it.id} from=${it.from} note="${it.note||""}" at=${it.at}`));
+    } catch (e) { print("requests error: " + e.message, "err"); }
+  },
+
+  async accept(args) {
+    const id = args[0];
+    if (!id) return print("usage: accept <request_id>", "err");
+    try {
+      const r = await xfetch(`/v1/contacts/requests/${id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "accept" })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const js = await r.json();
+      print(`accepted -> status=${js.status}`, "ok");
+
+      // pull fresh contacts from server
+      await syncContacts();
+    }
+    catch (e) {
+      print("accept error: " + e.message, "err");
+    }
+  },
+
+  async decline(args) {
+    const id = args[0];
+    if (!id) return print("usage: decline <request_id>", "err");
+    try {
+      const r = await xfetch(`/v1/contacts/requests/${id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "decline" })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const js = await r.json();
+      print(`declined -> status=${js.status}`, "ok");
+    }
+    catch (e) {
+      print("decline error: " + e.message, "err");
+    }
+  },
+
+  async contacts() {
+    if (!state.handle) return print("set a handle first", "err");
+    try {
+      await syncContacts(state.handle);
+      const list = await listContactsLocal(state.handle);
+      if (!list.length) return print("no contacts", "muted");
+      list.forEach(c => {
+        print(`@${c.handle}  (id=${c.user_id})`);
+      });
+    }
+    catch (e) {
+      print("contacts error: " + e.message, "err");
+    }
   }
 }
+
+
 
 // ---------- REPL ----------
 input.addEventListener("keydown", async (e) => {

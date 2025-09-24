@@ -10,7 +10,38 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_22_112730) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_24_172011) do
+  create_table "contact_requests", force: :cascade do |t|
+    t.integer "requester_id", null: false
+    t.integer "recipient_id"
+    t.string "recipient_handle", null: false
+    t.text "note"
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "t_ms", null: false
+    t.binary "nonce", null: false
+    t.binary "sig", null: false
+    t.binary "requester_ps", null: false
+    t.index ["recipient_handle", "status"], name: "index_contact_requests_on_recipient_handle_and_status"
+    t.index ["recipient_handle"], name: "index_contact_requests_on_recipient_handle"
+    t.index ["recipient_id", "status"], name: "index_contact_requests_on_recipient_id_and_status"
+    t.index ["recipient_id"], name: "index_contact_requests_on_recipient_id"
+    t.index ["requester_id", "status"], name: "index_contact_requests_on_requester_id_and_status"
+    t.index ["requester_id"], name: "index_contact_requests_on_requester_id"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.integer "contact_user_id", null: false
+    t.string "alias"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["contact_user_id"], name: "index_contacts_on_contact_user_id"
+    t.index ["user_id", "contact_user_id"], name: "index_contacts_on_user_id_and_contact_user_id", unique: true
+    t.index ["user_id"], name: "index_contacts_on_user_id"
+  end
+
   create_table "used_nonces", force: :cascade do |t|
     t.binary "signer_ps", null: false
     t.binary "nonce", null: false
@@ -31,4 +62,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_22_112730) do
     t.datetime "updated_at", null: false
     t.index ["handle"], name: "index_users_on_handle", unique: true
   end
+
+  add_foreign_key "contact_requests", "users", column: "recipient_id"
+  add_foreign_key "contact_requests", "users", column: "requester_id"
+  add_foreign_key "contacts", "users"
+  add_foreign_key "contacts", "users", column: "contact_user_id"
 end
