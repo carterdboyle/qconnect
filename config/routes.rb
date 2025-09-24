@@ -13,6 +13,8 @@ Rails.application.routes.draw do
   # root "posts#index"
   root "home#terminal"
 
+  get "/v1/csrf", to: "csrf#show"
+  
   scope "/v1" do
     get "session", to: "sessions#show" #whoami
     delete "session", to: "sessions#destroy" #logout

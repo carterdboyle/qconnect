@@ -127,12 +127,22 @@ async function listContactsLocal(owner) {
   })
 }
 
-const CSRF = document.querySelector('meta[name="csrf-token"]')?.content
+let CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
+
+async function refreshCsrf() {
+  const r = await fetch('/v1/csrf', { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('csrf ' + r.status);
+  const { csrf } = await r.json();
+  CSRF = csrf;
+  const m = document.querySelector('meta[name="csrf-token"]');
+  if (m) m.content = csrf;
+  return csrf;
+}
 
 function xfetch(url, opts ={}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{})};
   if (CSRF) headers['X-CSRF-Token'] = CSRF;
-  return fetch(url, {credentials: 'same-origin', ...opts, headers });
+  return fetch(url, { credentials: 'same-origin', ...opts, headers });
 }
 
 async function isAuthenticated() {
@@ -251,6 +261,7 @@ const commands = {
       // clear server session so subsequent calls are unauthenticated
       try {
         await xfetch("/v1/session", { method: "DELETE" });
+        await refreshCsrf();
         print("SERVER SESSION CLEARED", "muted");
       }
       catch(_) { /* ignore */ }
