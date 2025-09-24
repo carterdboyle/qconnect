@@ -145,6 +145,30 @@ async function syncContacts(owner) {
   for (const c of arr) await saveContact(owner, c);
 }
 
+// Helpers for data structures
+function be64(n) { // 8-byte big-endian
+  const b = new Uint8Array(8);
+  const dv = new DataView(b.buffer);
+  dv.setBigUint64(0, BigInt(n), false);
+  return b;
+}
+
+function concatU8(...parts) {
+  const len = parts.reduce((a, p) => a + p.length, 0);
+  const out = new Uint8Array(len);
+  let o=0; for (const p of parts){ out.set(p,o); o+=p.length; }
+  return out;
+}
+
+function randBytes(n) {
+  const u = new Uint8Array(n);
+  crypto.getRandomValues(u);
+  return u;
+}
+function packContactMsg(t_ms, nonce16, peerPS) {
+  return concatU8(be64(t_ms), nonce16, peerPS);
+}
+
 // ---------- OQS via your oqsClient.js ----------
 async function genKeypairs() {
   await initOQS();
@@ -341,13 +365,41 @@ const commands = {
     const to = args[0];
     if (!to) return print("usage: request <handle> [note...]", "err");
     const note = args.slice(1).join(" ");
+
+    if (!state.handle) return("set a handle first", "err");
+    const rec = await loadKeys(state.handle);
+    if (!rec) return print("no keys; run genkeys", "err");
+
     try {
+      const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
+      if (rShow.status === 404) return print("no such user", "err");
+      if (!rShow.ok) throw new Error("lookup " + rShow.status);
+      const { ps_b64 } = await rShow.json();
+      const PS_peer = unb64(ps_b64);
+
+      // Build tuple
+      const t = Date.now();
+      const n = randBytes(16);
+
+      const SS = unb64(rec.SS_b64);
+      const M = packContactMsg(t, n, PS_peer);
+      const S = await signMSG(SS, M);
+
       const r = await xfetch("/v1/contacts/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle: to, note })
+        body: JSON.stringify({
+          handle: to,
+          note,
+          t,
+          n_b64: b64u(n),
+          s_b64: b64u(S),
+          ps_peer_b64: b64u(PS_peer)
+        })
       });
+
       if (!r.ok) throw new Error("HTTP " + r.status);
+      
       const js = await r.json();
       print(`request send -> id=${js.id} to=${js.recipient_handle}`, "ok");
     } 
@@ -369,18 +421,38 @@ const commands = {
   async accept(args) {
     const id = args[0];
     if (!id) return print("usage: accept <request_id>", "err");
+    if (!state.handle) return print("set a handle first", "err");
+    const rec = await loadKeys(state.handle);
+    if (!rec) return print("no keys; run genkeys","err");
+
     try {
+      const rs = await xfetch("/v1/contacts/requests");
+      const list = await rs.json();
+      const row = list.find(r => String(r.id) === String(id));
+      if (!row) return print("unknown request id", "err");
+
+      const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(row.from)}`)
+      if (!rShow.ok) throw new Error("lookup " + rShow.status);
+      const { ps_b64: from_ps_b64 } = await rShow.json();
+      const PS_requester = unb64(from_ps_b64);
+
+      const t = Date.now();
+      const n = randBytes(16);
+      const SS = unb64(rec.SS_b64);
+      const M2 = packContactMsg(t, n, PS_requester);
+      const S2 = await signMSG(SS, M2);
+
       const r = await xfetch(`/v1/contacts/requests/${id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision: "accept" })
+        body: JSON.stringify({ decision: "accept", t, n_b64: b64u(n), s_b64: b64u(S2) })
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const js = await r.json();
       print(`accepted -> status=${js.status}`, "ok");
 
       // pull fresh contacts from server
-      await syncContacts();
+      await syncContacts(state.handle);
     }
     catch (e) {
       print("accept error: " + e.message, "err");
@@ -420,8 +492,6 @@ const commands = {
     }
   }
 }
-
-
 
 // ---------- REPL ----------
 input.addEventListener("keydown", async (e) => {

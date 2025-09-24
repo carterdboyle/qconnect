@@ -1,0 +1,2 @@
+class UsedNonce < ApplicationRecord
+end

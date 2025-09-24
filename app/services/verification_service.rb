@@ -8,8 +8,7 @@ class VerificationService
   end
 
   # in: public_key, msg, signature (not b64)
-    def self.verify(ps:, m:, sig:)  
-
+  def self.verify(ps:, m:, sig:)  
     # Verify signature over M using PS
     OQS::Dilithium2.verify(ps, m, sig)
   rescue => e
