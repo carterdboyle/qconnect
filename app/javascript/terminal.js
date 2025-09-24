@@ -102,11 +102,11 @@ async function clearContactsFor(owner) {
   })
 }
 
-async function getContact(handle) {
+async function getContactFor(owner, handle) {
   const db = await openDB();
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_CONTACTS, "readonly");
-    const rq = tx.objectStore(STORE_CONTACTS).get(handle);
+    const rq = tx.objectStore(STORE_CONTACTS).get(`[${owner},${handle}]`);
     rq.onsuccess = () => res(rq.result || null);
     rq.onerror = () => rej(rq.error);
   });
@@ -150,7 +150,7 @@ async function isAuthenticated() {
     const session_res = await xfetch('/v1/session');
     const session = await session_res.json();
     if (!session.user_id || !session.handle ) {
-      print("USER UNAUTHENTICATED", "err");
+      print("user unauthenticated", "err");
       return false;
     }
   }
@@ -393,8 +393,8 @@ const commands = {
       if (!r2.ok) throw new Error("submit " + r2.status);
       const done = await r2.json();
 
-      if (done.ok) print("logged in ✔ user_id=" + done.user_id, "ok");
-      else         print("login failed: " + JSON.stringify(done), "err");
+      if (done.ok) print(`logged in sucessfully ✔ (id=${done.user_id})`, "ok");
+      else         print(`login failed X: ${JSON.stringify(done.message)}`, "err");
     } catch (e) {
       print("login error: " + e.message, "err");
     }
@@ -416,7 +416,9 @@ const commands = {
       const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
       if (rShow.status === 404) return print("no such user", "err");
       if (!rShow.ok) throw new Error("lookup " + rShow.status);
-      const { ps_b64 } = await rShow.json();
+      
+      const { ps_b64, contact: is_contact } = await rShow.json();
+      if (is_contact) return print("Requestee is already a contact!", "err");
       const PS_peer = unb64(ps_b64);
 
       // Build tuple
@@ -481,9 +483,12 @@ const commands = {
       const row = list.find(r => String(r.id) === String(id));
       if (!row) return print("unknown request id", "err");
 
+
       const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(row.from)}`)
       if (!rShow.ok) throw new Error("lookup " + rShow.status);
-      const { ps_b64: from_ps_b64 } = await rShow.json();
+      const { ps_b64: from_ps_b64, contact: is_contact } = await rShow.json();
+      if (is_contact) return print("Requestee is already a contact!", "err");
+
       const PS_requester = unb64(from_ps_b64);
 
       const t = Date.now();
