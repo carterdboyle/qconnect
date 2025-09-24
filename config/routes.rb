@@ -12,6 +12,12 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   # root "posts#index"
   root "home#terminal"
+
+  scope "/v1" do
+    get "session", to: "sessions#show" #whoami
+    delete "session", to: "sessions#destroy" #logout
+  end
+
   scope "/v1/register" do
     post "init", to: "register#init"
     post "verify", to: "register#verify"

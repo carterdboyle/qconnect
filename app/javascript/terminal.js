@@ -127,12 +127,29 @@ async function listContactsLocal(owner) {
   })
 }
 
-const CSRF = document.querySelector('meta[name="csrf-token"')?.content
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content
 
 function xfetch(url, opts ={}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{})};
   if (CSRF) headers['X-CSRF-Token'] = CSRF;
   return fetch(url, {credentials: 'same-origin', ...opts, headers });
+}
+
+async function isAuthenticated() {
+  try {
+    const session_res = await xfetch('/v1/session');
+    const session = await session_res.json();
+    if (!session.user_id || !session.handle ) {
+      print("USER UNAUTHENTICATED", "err");
+      return false;
+    }
+  }
+  catch (e) {
+    print("Authentication: " + e.message, "err");
+    return false;
+  }
+
+  return true;
 }
 
 // List contacts (server), cache to IndexedDB, then show cached view
@@ -226,10 +243,21 @@ const commands = {
     print("  clear                      # clear screen");
   },
 
-  handle(args) {
+  async handle(args) {
+    const next = args[0];
     if (!args[0]) return print("usage: handle <name>", "err");
-    state.handle = args[0];
+
+    if (state.handle && state.handle !== next) {
+      // clear server session so subsequent calls are unauthenticated
+      try {
+        await xfetch("/v1/session", { method: "DELETE" });
+        print("SERVER SESSION CLEARED", "muted");
+      }
+      catch(_) { /* ignore */ }
+    }
+    state.handle = next;
     print("handle set -> " + state.handle, "ok");
+    print('RUN "LOGIN" TO AUTHENTICATE THIS HANDLE', "muted");
   },
 
   async status() {
@@ -366,9 +394,12 @@ const commands = {
     if (!to) return print("usage: request <handle> [note...]", "err");
     const note = args.slice(1).join(" ");
 
-    if (!state.handle) return("set a handle first", "err");
+    if (!state.handle) return print("set a handle first", "err");
     const rec = await loadKeys(state.handle);
     if (!rec) return print("no keys; run genkeys", "err");
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
 
     try {
       const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
@@ -409,6 +440,11 @@ const commands = {
   },
 
   async requests() {
+    if (!state.handle) return print("set a handle first", "err");
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
+
     try {
       const r = await xfetch("/v1/contacts/requests");
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -424,6 +460,9 @@ const commands = {
     if (!state.handle) return print("set a handle first", "err");
     const rec = await loadKeys(state.handle);
     if (!rec) return print("no keys; run genkeys","err");
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
 
     try {
       const rs = await xfetch("/v1/contacts/requests");
@@ -462,6 +501,11 @@ const commands = {
   async decline(args) {
     const id = args[0];
     if (!id) return print("usage: decline <request_id>", "err");
+    if (!state.handle) return print("set a handle first", "err");
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
+
     try {
       const r = await xfetch(`/v1/contacts/requests/${id}/respond`, {
         method: "POST",
@@ -479,6 +523,10 @@ const commands = {
 
   async contacts() {
     if (!state.handle) return print("set a handle first", "err");
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return; 
+
     try {
       await syncContacts(state.handle);
       const list = await listContactsLocal(state.handle);
