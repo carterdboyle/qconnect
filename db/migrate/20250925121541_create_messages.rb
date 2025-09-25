@@ -10,7 +10,5 @@ class CreateMessages < ActiveRecord::Migration[8.0]
       t.binary :sig, null: false
       t.timestamps
     end
-    add_index :messages, :recipient_id
-    add_index :messages, :sender_id
   end
 end

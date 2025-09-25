@@ -5,7 +5,9 @@ import {
   diliKeypair,   // [PS, SS]
   kyberKeypair,  // [PK, SK]
   diliSign,      // (SS, M) -> S
+  diliVerify,
   kyberDecaps,   // (SK, CT) -> sharedSecret
+  kyberEncaps,   // (PK) -> (CT, K)
   deriveKPrimeFromSS // (sharedSecret) -> 16-byte Uint8Array
 } from "/pq/oqsClient.js";
 
@@ -127,6 +129,7 @@ async function listContactsLocal(owner) {
   })
 }
 
+// Session and browser helpers
 let CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
 
 async function refreshCsrf() {
@@ -196,6 +199,30 @@ function packContactMsg(t_ms, nonce16, peerPS) {
   return concatU8(be64(t_ms), nonce16, peerPS);
 }
 
+function packMsgBytes(t_ms, n16, ck, cm) {
+  return concatU8(be64(t_ms), n16, ck, cm);
+}
+
+// ---------- Crypto helpers ---------------------
+async function sha256(u8) {
+  const h = await crypto.subtle.digest("SHA-256", u8);
+  return new Uint8Array(h);
+}
+
+async function importAesKey(raw32) {
+  return crypto.subtle.importKey("raw", raw32, "AES-GCM", false, ["encrypt", "decrypt"])
+}
+
+async function aesGcmEncrypt(key, iv12, plaintextU8) {
+  const ct = await crypto.subtle.encrypt({name: "AES-GCM", iv: iv12}, key, plaintextU8);
+  return new Uint8Array(ct);
+}
+
+async function aesGcmDecrypt(key, iv12, ctU8) {
+  const pt = await crypto.subtle.decrypt({name: "AES-GCM", iv: iv12}, key, ctU8);
+  return new Uint8Array(pt);
+}
+
 // ---------- OQS via your oqsClient.js ----------
 async function genKeypairs() {
   await initOQS();
@@ -232,6 +259,66 @@ function banner() {
 
 let state = { handle: null };
 
+async function listMessages(box) {
+  if (!state.handle) return print('set a handle first', 'err');
+  const me = await loadKeys(state.handle);
+  if (!me) return print('no local keys', 'err');
+
+  const authenticated = await isAuthenticated();
+  if (!authenticated) return;
+
+  try {
+    const r = await xfetch(`/v1/messages?box=${box||'inbox'}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const arr = await r.json();
+    if (!arr.length) return print(`no ${box||'inbox'} messages`, 'muted');
+
+    for (const m of arr) {
+      // Verify signature and decrypt when I'm recipient
+      const n = unb64(m.n_b64);
+      const ck = unb64(m.ck_b64);
+      const cm = unb64(m.cm_b64);
+      const s = unb64(m.s_b64);
+      const msgBytes = packMsgBytes(m.t, n, ck, cm);
+
+      // Verify with sender PS (from contact or server)
+      let senderPsB64;
+      const cached = await getContactFor?.(state.handle, m.from);
+      if (cached?.ps_b64) senderPsB64 = cached.ps_b64;
+      else {
+        const rs = await xfetch(`/v1/contacts/${encodeURIComponent(m.from)}`);
+        if (rs.ok) senderPsB64 = (await rs.json()).ps_b64;
+      }
+      const PS_sender = senderPsB64 ? unb64(senderPsB64) : null;
+      if (PS_sender) {
+        const ok = await diliVerify?.(PS_sender, s, msgBytes);
+        if (ok !== true) { print(`✖ bad signature from @${m.from}`, 'err'); continue; }
+      }
+
+      let preview = '';
+      if ((box || 'inbox') === 'inbox') {
+        const SK = unb64(me.SK_b64);
+        const K = await kyberDecaps(SK, ck);
+        const k_kem = (K.length === 32) ? K : await sha256(K);
+        const k = await importAesKey(k_kem);
+
+        try {
+          const pt = await aesGcmDecrypt(k, n.slice(0,12), cm);
+          preview = new TextDecoder().decode(pt);
+        } catch {
+          preview = '[decrypt failed]';
+        }
+      } else {
+        preview = ['[outgoing ciphertext]'];
+      }
+
+      print(`#${m.id} ${new Date(m.t).toISOString()} @${m.from} -> @${m.to}: ${preview}`);
+    }
+  } catch (e) {
+    print('messages error: ' + e.message, 'err');
+  }
+}
+
 const commands = {
   help() {
     print("COMMANDS:", "muted");
@@ -251,6 +338,10 @@ const commands = {
     print("  decline <request_id>       # decline a request from a given contact")
     print("  contacts                   # view contact book")
     print("  clear                      # clear screen");
+    print("MESSAGING:", "muted")
+    print("  send <handle> <message...> # send a user a message");
+    print("  outbox                     # view outgoing messages");
+    print("  inbox                      # view incoming messages");
   },
 
   async handle(args) {
@@ -554,6 +645,74 @@ const commands = {
     catch (e) {
       print("contacts error: " + e.message, "err");
     }
+  },
+
+  async send(args) {
+    const to = args[0];
+    const text = args.slice(1).join(" ");
+    if (!to || !text) return print("usage: send <handle> <message...>", "err");
+    if (!state.handle) return print('set a handle first', 'err');
+    const me = await loadKeys(state.handle); if (!me) return print('no local keys', 'err');
+
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
+
+    try {
+      // 1) Get recipients PK
+      // try local first, then hit the server
+      let rec = await getContactFor?.(state.handle, to);
+      if (!rec) {
+        const r = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
+        if (!r.ok) throw new Error('lookup ' + r.status);
+        rec = await r.json();
+      }
+      const PK_peer = unb64(rec.pk_b64);
+
+      // 2) KEM encaps CK
+      await initOQS?.();
+      const { ct: CK, k } = await kyberEncaps(PK_peer);
+
+      // 3) Encrypt with AES-GCM(iv = n[0..11])
+      const K = (k.length === 32) ? k : await sha256(k);
+
+      const iv = randBytes(16);
+      const iv12 = iv.slice(0, 12);
+      const key = await importAesKey(K);
+      const CM = await aesGcmEncrypt(key, iv12, new TextEncoder().encode(text));
+
+      // 4) sign (T || n || CK || CM)
+      const t = Date.now();
+      const M = packMsgBytes(t, iv, CK, CM);
+      const SS = unb64(me.SS_b64);
+      const S = await diliSign(SS, M);
+
+      // 5) POST /v1/messages
+      const r2 = await xfetch('/v1/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          to_handle: to,
+          t,
+          n_b64: b64u(iv),
+          ck_b64: b64u(CK),
+          cm_b64: b64u(CM),
+          s_b64: b64u(S)
+        })
+      });
+      if (!r2.ok) throw new Error('HTTP ' + r2.status);
+      const js = await r2.json();
+      print(`sent -> id=${js.id} to=@${to}`, 'ok');
+    }
+    catch (e) {
+      print('send error: ' + e.message, 'err');
+    }
+  },
+
+  async inbox() {
+    await listMessages('inbox');
+  },
+
+  async outbox() {
+    await listMessages('outbox');
   }
 }
 

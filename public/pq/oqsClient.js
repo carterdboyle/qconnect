@@ -55,7 +55,7 @@ export async function diliVerify(pk, sig, msg) {
   const rc = M.cwrap("dili_verify", "number", ["number", "number", "number", "number", "number", "number"])(pkPtr, pk.length, msgPtr, msg.length, sigPtr, sig.length);
   M._free(msgPtr); M._free(pkPtr); M._free(sigPtr);
   if (rc !== 0) throw new Error("verify failed");
-  return 0;
+  return true;
 }
 
 export async function kyberKeypair() {
@@ -65,6 +65,17 @@ export async function kyberKeypair() {
   const pk = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_kyber_pk_ptr", "number", [])(), M.cwrap("get_kyber_pk_len", "number", [])());
   const sk = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_kyber_sk_ptr", "number", [])(), M.cwrap("get_kyber_sk_len", "number", [])());
   return [pk.slice(0), sk.slice(0)];
+}
+
+export async function kyberEncaps(pk) {
+  const M = await initOQS();
+  const pkPtr = M._malloc(pk.length); M.HEAPU8.set(pk, pkPtr);
+  const rc = M.cwrap("kyber_encaps", "number", ["number", "number"])(pkPtr, pk.length);
+  M._free(pkPtr);
+  if (rc !== 0) throw new Error("encaps failed");
+  const ct = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_kyber_ct_ptr", "number", [])(), M.cwrap("get_kyber_ct_len", "number", [])()).slice(0);
+  const k = new Uint8Array(M.HEAPU8.buffer, M.cwrap("get_kyber_k_ptr", "number", [])(), M.cwrap("get_kyber_k_len", "number", [])()).slice(0);
+  return { ct, k };
 }
 
 export async function kyberDecaps(sk, ct) {

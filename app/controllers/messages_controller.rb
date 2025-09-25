@@ -30,21 +30,21 @@ class MessagesController < ApplicationController
     cm = Base64.urlsafe_decode64(cm_b64)
     s = Base64.urlsafe_decode64(s_b64)
 
+    message = Message.new(
+      sender: sender, recipient: recip,
+      t_ms: t_ms, nonce: n, ck: ck, cm: cm, sig: s
+    )
+    
     # Verify S over T||n||CK||CM with PS_sender
-    msg_bytes = Proto.pack_msg(t_ms:, nonce: n, ck:, cm:)
-    ok = VerificationService.verify(ps: uk.ps, m: msg_bytes, sig: s)
+    ok = VerificationService.verify(ps: uk.ps, m: message.bytes_for_signature, sig: s)
     return render(json: { message: "bad signature" }, status: :unauthorized) unless ok
 
     # Nonce uniqueness for (n, PS_sender)
     return render(json: { message: "replay"}, status: :unauthorized) unless NonceLedger.consume!(signer_ps: uk.ps, nonce: n)
 
-    # Store and relay
-    m = Message.create!(
-      sender: sender, recipient: recip,
-      t_ms:, nonce: n, ck:, cm:, sig: s
-    )
+    message.save!
 
-    render json: { id: m.id, ok: true }
+    render json: { id: message.id, ok: true }
   rescue ActionController::ParameterMissing => e
     render json: { message: "missing #{e.param}" }, status: :bad_request
   rescue ActiveRecord::RecordNotFound
@@ -56,25 +56,9 @@ class MessagesController < ApplicationController
   # GET /v1/messages?box=inbox|outbox (default inbox)
   def index
     box = params[:box].to_s
-    scope = 
-      if box == "outbox"
-        Message.where(sender_id: current_user.id).order(created_at: :asc)
-      else
-        Message.where(recipient_id: current_user.id).order(created_at: :asc)
-      end
+    scope = (box == 'outbox') ? Message.outbox_for(current_user) : Message.inbox_for(current_user)
     
-    render json: scope.map { |m| 
-      {
-        id: m.id,
-        from: m.sender.handle,
-        to: m.recipient.handle,
-        t: m.t_ms,
-        n_b64: Base64.urlsafe_encode64(m.nonce, padding: false)
-        ck_b64: Base64.urlsafe_encode64(m.ck, padding: false)
-        cm_b64: Base64.urlsafe_encode64(m.cm, padding: false)
-        s_b64: Base64.urlsafe_encode64(m.sig, padding: false)
-      }
-    }
+    render json: scope.map(&:as_json_for_api)
   end
 
   private
