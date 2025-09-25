@@ -40,4 +40,8 @@ Rails.application.routes.draw do
     get "", to: "contacts#index" # my contacts
     get ":handle", to: "contacts#show" # one contact by handle
   end
+
+  scope "/v1" do
+    resources :messages, only: [ :index, :create ]
+  end
 end
