@@ -54,7 +54,6 @@ class MessagesController < ApplicationController
       n_b64: Base64.urlsafe_encode64(message.nonce, padding: false),
       ck_b64: Base64.urlsafe_encode64(message.ck, padding: false),
       cm_b64: Base64.urlsafe_encode64(message.cm, padding: false),
-      cm_b64: Base64.urlsafe_encode64(message.cm, padding: false),
       s_b64: Base64.urlsafe_encode64(message.sig, padding: false),
       conversation_id: message.conversation_id
     }

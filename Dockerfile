@@ -11,6 +11,9 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl git nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=10 \
+  CMD curl -fsS http://127.0.0.1:${PORT:-3000}/up || exit 1
+
 # Gem setup
 RUN gem install bundler -v ${BUNDLER_VERSION}
 COPY Gemfile Gemfile.lock ./
@@ -26,7 +29,7 @@ COPY . .
 # RUN npm ci && npm run build
 
 COPY ext/oqs_shim/liboqs_shim.so /app/ext/oqs_shim/
-COPY /usr/local/lib/liboqs.so.8 /usr/local/lib/
+COPY ext/oqs_shim/liboqs.so.8 /usr/local/lib/
 
 RUN ldconfig
 
