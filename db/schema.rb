@@ -10,12 +10,13 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_25_161023) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_26_221900) do
   create_table "chat_reads", force: :cascade do |t|
     t.integer "conversation_id", null: false
     t.integer "user_id", null: false
     t.bigint "last_read_message_id"
     t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.bigint "last_read_t_ms", default: 0, null: false
     t.index ["conversation_id", "user_id"], name: "index_chat_reads_on_conversation_id_and_user_id", unique: true
     t.index ["conversation_id"], name: "index_chat_reads_on_conversation_id"
     t.index ["user_id"], name: "index_chat_reads_on_user_id"
@@ -74,6 +75,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_25_161023) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "conversation_id", null: false
+    t.index ["conversation_id", "t_ms", "id"], name: "index_messages_on_conversation_id_and_t_ms_and_id"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["recipient_id"], name: "index_messages_on_recipient_id"
     t.index ["sender_id"], name: "index_messages_on_sender_id"

@@ -73,7 +73,7 @@ class ChatsController < ApplicationController
     result = []
     convos.includes(:messages).find_each do | c |
       peer_id = c.peer_for(current_user.id)
-      last = c.messages.order(id: :asc).last
+      last = c.messages.order(Arel.sql("t_ms DESC, id DESC")).first
       next unless last
 
       # unread: messages in convo to me with id > read marker
@@ -94,9 +94,11 @@ class ChatsController < ApplicationController
   def read
     convo = Conversation.find(params[:id])
     # last message addressed to me in this conversation
-    last_to_me = convo.messages.where(recipient_id: current_user.id).order(id: :asc).last
-    ChatRead.find_or_create_by!(conversation: convo, user: current_user)
-            .update!(last_read_message_id: last_to_me&.id)
+    last_to_me = convo.messages.where(recipient_id: current_user.id).order(Arel.sql("t_ms DESC, id DESC")).first
+    cr = ChatRead.find_or_create_by!(conversation: convo, user: current_user)
+    if last_to_me
+      cr.update!(last_read_message_id: last_to_me.id, last_read_t_ms: last_to_me.t_ms)
+    end
     head :no_content
   rescue ActiveRecord::RecordNotFound
     render json: { message: "not found" }, status: :not_found

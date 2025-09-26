@@ -375,7 +375,7 @@ async function appendIncoming(owner, peer, encMsg) {
 }
 
 // Subscribe helper
-function subscribeChat(conversation_id, owner, peer) {
+async function subscribeChat(conversation_id, owner, peer) {
   const sub = window.Cable?.subscriptions.create(
     { channel: "ChatChannel", conversation_id },
     {
@@ -386,6 +386,9 @@ function subscribeChat(conversation_id, owner, peer) {
         const time = new Date(data.t).toLocaleTimeString();
         const last = (await listChatLocal(owner, peer, 1e9)).pop();
         printChat(`${time} @${data.from}`, `${last?.text ?? "[decrypt failed]"}`);
+
+        // Mark as read when receiving
+        await xfetch(`/v1/chats/${conv.conversation_id}/read`, { method: "POST"});
       }
     }
   );
