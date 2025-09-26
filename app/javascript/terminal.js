@@ -49,6 +49,8 @@ function openDB() {
       if (db.objectStoreNames.contains(STORE_MSGS)) db.deleteObjectStore(STORE_MSGS);
       const msgs = db.createObjectStore(STORE_MSGS, { keyPath: ["owner", "peer", "id"] });
       msgs.createIndex("by_owner_peer_time", ["owner", "peer", "t"], { unique: false });
+      msgs.createIndex("by_owner_peer_time_id", ["owner", "peer", "t", "id"], { unique: false });
+
     };
     r.onsuccess = () => res(r.result);
     r.onerror   = () => rej(r.error);
@@ -180,9 +182,9 @@ async function listChatLocal(owner, peer, limit=50) {
   return new Promise((res, rej) => {
     const out = [];
     const tx = db.transaction(STORE_MSGS, "readonly");
-    const idx = tx.objectStore(STORE_MSGS).index("by_owner_peer_time");
-    const range = IDBKeyRange.bound([owner, peer, -Infinity],[owner, peer, Infinity]);
-    idx.openCursor(range).onsuccess = (e) => {
+    const idx = tx.objectStore(STORE_MSGS).index("by_owner_peer_time_id");
+    const range = IDBKeyRange.bound([owner, peer, -Infinity, -Infinity],[owner, peer, Infinity, Infinity]);
+    idx.openCursor(range, "next").onsuccess = (e) => {
       const cur = e.target.result;
       if (!cur) return;
       out.push(cur.value);
@@ -195,12 +197,8 @@ async function listChatLocal(owner, peer, limit=50) {
 }
 
 async function maxLocalCursor(owner, peer) {
-  const items = await listChatLocal(owner, peer, 1e9);
-  let t = 0, id = 0;
-  for (const m of items) {
-    if (m.t > t || (m.t === t && m.id > id)) { t = m.t; id = m.id; }
-  }
-  return { t_ms: t, id };
+  const last = await lastMessageLocal(owner, peer);
+  return { t_ms: last?.t ?? 0, id: last?.id ?? 0 };
 }
 
 async function getServerLastRead(conversationId) {
@@ -225,6 +223,46 @@ async function syncNewFromServer(owner, peer, conversationId) {
     await upsertPlainMessage(owner, peer, m);
   }
   return arr.length;
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+async function _markRead(conversationId, owner, peer) {
+  await xfetch(`/v1/chats/${encodeURIComponent(conversationId)}/read`, {
+    method: "POST"
+  });
+
+  const lastInbound = await lastInboundMessageLocal(owner, peer);
+  if (lastInbound) await putConversation(owner, peer, {
+    conversation_id: conversationId,
+    last_read_id: lastInbound.id
+  })
+}
+const markRead = debounce(_markRead, 250);
+
+async function lastInboundMessageLocal(owner, peer) {
+  const m = await lastMessageLocal(owner, peer);
+  if (m && m.to === owner) return m;
+  const list = await listChatLocal(owner, peer, 200);
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].to === owner) return list[i];
+  }
+  return null;
+}
+
+async function lastMessageLocal(owner, peer) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE_MSGS, "readonly");
+    const idx = tx.objectStore(STORE_MSGS).index("by_owner_peer_time_id");
+    const range = IDBKeyRange.bound([owner, peer, -Infinity, -Infinity], [owner, peer, Infinity, Infinity]);
+    const rq = idx.openCursor(range, "prev");
+    rq.onsuccess = () => res(rq.result ? rq.result.value : null);
+    rq.onerror = () => rej(rq.error);
+  })
 }
 
 // Session and browser helpers
@@ -375,7 +413,7 @@ async function appendIncoming(owner, peer, encMsg) {
 }
 
 // Subscribe helper
-async function subscribeChat(conversation_id, owner, peer) {
+function subscribeChat(conversation_id, owner, peer) {
   const sub = window.Cable?.subscriptions.create(
     { channel: "ChatChannel", conversation_id },
     {
@@ -384,11 +422,11 @@ async function subscribeChat(conversation_id, owner, peer) {
 
         await appendIncoming(owner, peer, data);
         const time = new Date(data.t).toLocaleTimeString();
-        const last = (await listChatLocal(owner, peer, 1e9)).pop();
+        const last = await lastMessageLocal(owner, peer);
         printChat(`${time} @${data.from}`, `${last?.text ?? "[decrypt failed]"}`);
 
         // Mark as read when receiving
-        await xfetch(`/v1/chats/${conv.conversation_id}/read`, { method: "POST"});
+        markRead(conversation_id, owner, peer);
       }
     }
   );
@@ -900,7 +938,7 @@ const commands = {
       await renderLocalChat(owner, peer, added);
 
       // Mark read
-      xfetch(`/v1/chats/${conv.conversation_id}/read`, { method: "POST"});
+      markRead(conv.conversation_id, owner, peer);
 
       // subcribe to live chat
       if (!window.Cable) print("⚠️ ActionCable not loaded", "err");
