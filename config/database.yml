@@ -28,5 +28,5 @@ test:
 # Similarly, if you deploy your application as a Docker container, you must
 # ensure the database is located in a persisted volume.
 production:
-  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
   # database: path/to/persistent/storage/production.sqlite3
