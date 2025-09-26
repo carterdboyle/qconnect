@@ -41,7 +41,9 @@ body {
   padding: 12px; background: rgba(0,0,0,.6); border: 1px solid var(--dim);
 }
 
-.line { display: flex; align-items: baseline; gap: 8px; }
+.preface { flex: 0 0 auto; }
+.chat { flex: 1 1 auto; }
+.line { display: flex; justify-content: flex-start; align-items: baseline; gap: 8px; }
 .prompt { color: var(--phosphor); }
 .muted  { color: var(--dim); }
 .ok     { color: #9affc7; }

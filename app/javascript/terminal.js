@@ -11,6 +11,9 @@ import {
   deriveKPrimeFromSS // (sharedSecret) -> 16-byte Uint8Array
 } from "/pq/oqsClient.js";
 
+import { createConsumer } from "@rails/actioncable"
+window.Cable = createConsumer();
+
 // ---------- Base64url helpers ----------
 const b64u  = (u8) => btoa(String.fromCharCode(...u8)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const unb64 = (s) => { s=s.replace(/-/g,'+').replace(/_/g,'/'); const pad=s.length%4===2?'==':s.length%4===3?'=':''; const bin=atob(s+pad); return Uint8Array.from(bin,c=>c.charCodeAt(0)); };
@@ -19,10 +22,13 @@ const unb64 = (s) => { s=s.replace(/-/g,'+').replace(/_/g,'/'); const pad=s.leng
 const DB_NAME = "qconnect";
 const STORE_KEYS = "keys";
 const STORE_CONTACTS = "contacts";
+const STORE_CONV = "conversations";
+const STORE_MSGS = "messages";
+const DB_VERSION = 5;
 
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 3);
+    const r = indexedDB.open(DB_NAME, DB_VERSION);
     r.onupgradeneeded = () => {
       const db = r.result;
       if (!db.objectStoreNames.contains(STORE_KEYS))
@@ -35,6 +41,14 @@ function openDB() {
       const s = db.createObjectStore(STORE_CONTACTS, { keyPath: ["owner", "handle"] });
       s.createIndex("by_owner", "owner", { unique: false });
       s.createIndex("by_owner_handle", ["owner", "handle"], { unique: true });
+
+      if (db.objectStoreNames.contains(STORE_CONV)) db.deleteObjectStore(STORE_CONV);
+      const conv = db.createObjectStore(STORE_CONV, { keyPath: ["owner", "peer"]});
+      conv.createIndex("by_owner", "owner", { unique: false });
+
+      if (db.objectStoreNames.contains(STORE_MSGS)) db.deleteObjectStore(STORE_MSGS);
+      const msgs = db.createObjectStore(STORE_MSGS, { keyPath: ["owner", "peer", "id"] });
+      msgs.createIndex("by_owner_peer_time", ["owner", "peer", "t"], { unique: false });
     };
     r.onsuccess = () => res(r.result);
     r.onerror   = () => rej(r.error);
@@ -108,7 +122,7 @@ async function getContactFor(owner, handle) {
   const db = await openDB();
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_CONTACTS, "readonly");
-    const rq = tx.objectStore(STORE_CONTACTS).get(`[${owner},${handle}]`);
+    const rq = tx.objectStore(STORE_CONTACTS).get([owner, handle]);
     rq.onsuccess = () => res(rq.result || null);
     rq.onerror = () => rej(rq.error);
   });
@@ -127,6 +141,88 @@ async function listContactsLocal(owner) {
     tx.oncomplete = () => res(out);
     tx.onerror = () => rej(tx.error);
   })
+}
+
+async function putConversation(owner, peer, payload) {
+  const db = await openDB();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONV, "readwrite");
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+    tx.objectStore(STORE_CONV).put({ owner, peer, ...payload });
+  })
+}
+
+async function getConversation(owner, peer) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE_CONV, "readonly");
+    const rq = tx.objectStore(STORE_CONV).get([owner, peer]);
+    rq.onsuccess = () => res(rq.result || null );
+    rq.onerror = () => rej(rq.error);
+  });
+}
+
+async function upsertPlainMessage(owner, peer, m) {
+  // m: { id, t, from, to, text }
+  const msg = { ...m };
+  const db = await openDB();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(STORE_MSGS, "readwrite");
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+    tx.objectStore(STORE_MSGS).put({ owner, peer, ...msg});
+  })
+}
+
+async function listChatLocal(owner, peer, limit=50) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const out = [];
+    const tx = db.transaction(STORE_MSGS, "readonly");
+    const idx = tx.objectStore(STORE_MSGS).index("by_owner_peer_time");
+    const range = IDBKeyRange.bound([owner, peer, -Infinity],[owner, peer, Infinity]);
+    idx.openCursor(range).onsuccess = (e) => {
+      const cur = e.target.result;
+      if (!cur) return;
+      out.push(cur.value);
+      if (out.length >= limit) return;
+      cur.continue();
+    }
+    tx.oncomplete = () => res(out);
+    tx.onerror = () => rej(tx.error);
+  })
+}
+
+async function maxLocalMessageId(owner, peer) {
+  const list = await listChatLocal(owner, peer, 1e9);
+  let max = 0; for (const m of list) if (m.id > max) max = m.id;
+  return max;
+}
+
+async function getServerLastRead(conversationId) {
+  const r = await xfetch(`/v1/chats/${encodeURIComponent(conversationId)}/last_read`);
+  if (!r.ok) throw new Error("last_read" + r.status);
+  const { last_read_message_id } = await r.json();
+  return Number(last_read_message_id) || 0;
+}
+
+async function fetchEncryptedSince(conversationId, afterId, limit=500) {
+  const url = `/v1/chats/${encodeURIComponent(conversationId)}/messages?after_id=${encodeURIComponent(afterId)}&limit=${encodeURIComponent(limit)}`;
+  const r = await xfetch(url);
+  if (!r.ok) throw new Error("messages_since " + r.status);
+  return await r.json();
+}
+
+async function syncNewFromServer(owner, peer, conversationId) {
+  const localMax = await maxLocalMessageId(owner, peer);
+  const arr = await fetchEncryptedSince(conversationId, localMax);
+
+  for (const em of arr) {
+    const m = await decryptInboundToPlain(owner, em);
+    await upsertPlainMessage(owner, peer, m);
+  }
+  return arr.length;
 }
 
 // Session and browser helpers
@@ -223,6 +319,90 @@ async function aesGcmDecrypt(key, iv12, ctU8) {
   return new Uint8Array(pt);
 }
 
+async function decryptInboundToPlain(owner, encMsg) {
+  // encMsg: { id, from, to, to, n_b64, ck_b64, cm_b64, ... }
+  const n = unb64(encMsg.n_b64);
+  const ck = unb64(encMsg.ck_b64);
+  const cm = unb64(encMsg.cm_b64);
+
+  if (encMsg.to !== owner) {
+    return { id: encMsg.id, t: encMsg.t, from: encMsg.from, to: encMsg.to, text: null }
+  }
+
+  const rec = await loadKeys(owner);
+  if (!rec) throw new Error("no local SK");
+  const SK = unb64(rec.SK_b64);
+
+  const K = await kyberDecaps(SK, ck);
+  const key = await importAesKey(K);
+  const pt = await aesGcmDecrypt(key, n.slice(0,12), cm);
+  const text = new TextDecoder().decode(pt);
+
+  return { id: encMsg.id, t: encMsg.t, from: encMsg.from, to: encMsg.to, text };
+  
+} 
+
+// Initial load: if no plaintext, fetch & decrpyt history once
+async function ensureLocalHistory(owner, peer) {
+  let local = await listChatLocal(owner, peer, 1);
+  if (local.length > 0) return;
+  
+  local = await listChatLocal(owner, peer, 1e9);
+
+  const r = await xfetch("/v1/chats/open", {
+    method: "POST",
+    body: JSON.stringify({ handle: peer })
+  });
+
+  if (!r.ok) throw new Error("open " + r.status);
+  const { conversation_id, history } = await r.json();
+  await putConversation(owner, peer, { conversation_id, last_read_id: null });
+
+  for (const em of history) {
+    const m = await decryptInboundToPlain(owner, em);
+    await upsertPlainMessage(owner, peer, m);
+  }
+
+  return history.length;
+}
+
+// Append new (from Action Cable)
+async function appendIncoming(owner, peer, encMsg) {
+  const m = await decryptInboundToPlain(owner, encMsg);
+  await upsertPlainMessage(owner, peer, m);
+}
+
+// Subscribe helper
+function subscribeChat(conversation_id, owner, peer) {
+  const sub = window.Cable?.subscriptions.create(
+    { channel: "ChatChannel", conversation_id },
+    {
+      received: async (data) => {
+        if (data.from === owner) return;
+
+        await appendIncoming(owner, peer, data);
+        const time = new Date(data.t).toLocaleTimeString();
+        const last = (await listChatLocal(owner, peer, 1e9)).pop();
+        printChat(`${time} @${data.from}`, `${last?.text ?? "[decrypt failed]"}`);
+      }
+    }
+  );
+  return sub;
+}
+
+async function renderLocalChat(owner, peer, added) {
+  const list = await listChatLocal(owner, peer);
+  list.forEach((m, i) => {
+    const who = (m.from === owner) ? "me" : "@"+m.from;
+    const time = new Date(m.t).toLocaleTimeString();
+    const text = (m.text ?? "[sent]");
+    added && 
+      ((list.length - added) == i) &&
+      print(`${added} new message${added > 1 ? "s" : ""}!\n`, "ok")
+    printChat(`${time} ${who}`, text);
+  });
+}
+
 // ---------- OQS via your oqsClient.js ----------
 async function genKeypairs() {
   await initOQS();
@@ -251,71 +431,84 @@ function printHTML(h) {
   term.appendChild(d);
   term.scrollTop = term.scrollHeight;
 }
+function printChat(preface, txt) {
+  const d = document.createElement("div");
+  d.className = "line";
+  d.innerHTML = `<span class='preface muted'>${preface}: </span><span class="chat">${txt}</span>`;
+  term.appendChild(d);
+  term.scrollTop = term.scrollHeight;
+}
 function banner() {
   print("=== QCONNECT SECURE CONSOLE ===");
   print("Algorithms: ML-DSA-44 (sign), ML-KEM-512 (KEM)");
   print('Type "help" for commands.');
 }
 
+// Stats
 let state = { handle: null };
+let chatState = null;
 
-async function listMessages(box) {
+async function inboxSummary() {
+  const r = await xfetch("/v1/chats/summary");
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json(); // [{ handle, undread, last_t, conversation_id }]
+}
+
+async function sendMessageAndGetId(to, text) {
+  if (!to || !text) throw new Error("Invalid input parameters");
   if (!state.handle) return print('set a handle first', 'err');
-  const me = await loadKeys(state.handle);
-  if (!me) return print('no local keys', 'err');
+  const me = await loadKeys(state.handle); if (!me) return print('no local keys', 'err');
 
   const authenticated = await isAuthenticated();
   if (!authenticated) return;
 
   try {
-    const r = await xfetch(`/v1/messages?box=${box||'inbox'}`);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const arr = await r.json();
-    if (!arr.length) return print(`no ${box||'inbox'} messages`, 'muted');
-
-    for (const m of arr) {
-      // Verify signature and decrypt when I'm recipient
-      const n = unb64(m.n_b64);
-      const ck = unb64(m.ck_b64);
-      const cm = unb64(m.cm_b64);
-      const s = unb64(m.s_b64);
-      const msgBytes = packMsgBytes(m.t, n, ck, cm);
-
-      // Verify with sender PS (from contact or server)
-      let senderPsB64;
-      const cached = await getContactFor?.(state.handle, m.from);
-      if (cached?.ps_b64) senderPsB64 = cached.ps_b64;
-      else {
-        const rs = await xfetch(`/v1/contacts/${encodeURIComponent(m.from)}`);
-        if (rs.ok) senderPsB64 = (await rs.json()).ps_b64;
-      }
-      const PS_sender = senderPsB64 ? unb64(senderPsB64) : null;
-      if (PS_sender) {
-        const ok = await diliVerify?.(PS_sender, s, msgBytes);
-        if (ok !== true) { print(`✖ bad signature from @${m.from}`, 'err'); continue; }
-      }
-
-      let preview = '';
-      if ((box || 'inbox') === 'inbox') {
-        const SK = unb64(me.SK_b64);
-        const K = await kyberDecaps(SK, ck);
-        const k_kem = (K.length === 32) ? K : await sha256(K);
-        const k = await importAesKey(k_kem);
-
-        try {
-          const pt = await aesGcmDecrypt(k, n.slice(0,12), cm);
-          preview = new TextDecoder().decode(pt);
-        } catch {
-          preview = '[decrypt failed]';
-        }
-      } else {
-        preview = ['[outgoing ciphertext]'];
-      }
-
-      print(`#${m.id} ${new Date(m.t).toISOString()} @${m.from} -> @${m.to}: ${preview}`);
+    // 1) Get recipients PK
+    // try local first, then hit the server
+    let rec = await getContactFor(state.handle, to);
+    if (!rec) {
+      const r = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
+      if (!r.ok) throw new Error('lookup ' + r.status);
+      rec = await r.json();
     }
-  } catch (e) {
-    print('messages error: ' + e.message, 'err');
+    const PK_peer = unb64(rec.pk_b64);
+
+    // 2) KEM encaps CK
+    await initOQS?.();
+    const { ct: CK, k } = await kyberEncaps(PK_peer);
+
+    // 3) Encrypt with AES-GCM(iv = n[0..11])
+    const K = (k.length === 32) ? k : await sha256(k);
+
+    const iv = randBytes(16);
+    const iv12 = iv.slice(0, 12);
+    const key = await importAesKey(K);
+    const CM = await aesGcmEncrypt(key, iv12, new TextEncoder().encode(text));
+
+    // 4) sign (T || n || CK || CM)
+    const t = Date.now();
+    const M = packMsgBytes(t, iv, CK, CM);
+    const SS = unb64(me.SS_b64);
+    const S = await diliSign(SS, M);
+
+    // 5) POST /v1/messages
+    const r2 = await xfetch('/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        to_handle: to,
+        t,
+        n_b64: b64u(iv),
+        ck_b64: b64u(CK),
+        cm_b64: b64u(CM),
+        s_b64: b64u(S)
+      })
+    });
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    const js = await r2.json();
+    return js.id;
+  }
+  catch (e) {
+    print('send error: ' + e.message, 'err');
   }
 }
 
@@ -323,7 +516,7 @@ const commands = {
   help() {
     print("COMMANDS:", "muted");
     print("  handle <name>              # set active handle");
-    print("  status                     # show local key status");
+    print("  status                     # show local key status and current handle");
     print("KEY MANAGEMENT:", "muted")
     print("  genkeys                    # generate keys and store in IndexedDB");
     print("  show ps|pk                 # print your public keys");
@@ -339,9 +532,8 @@ const commands = {
     print("  contacts                   # view contact book")
     print("  clear                      # clear screen");
     print("MESSAGING:", "muted")
-    print("  send <handle> <message...> # send a user a message");
-    print("  outbox                     # view outgoing messages");
-    print("  inbox                      # view incoming messages");
+    print("  inbox                      # view new messages");
+    print("  chat <handle>              # enter a secure chat with user");
   },
 
   async handle(args) {
@@ -647,88 +839,112 @@ const commands = {
     }
   },
 
-  async send(args) {
-    const to = args[0];
-    const text = args.slice(1).join(" ");
-    if (!to || !text) return print("usage: send <handle> <message...>", "err");
-    if (!state.handle) return print('set a handle first', 'err');
-    const me = await loadKeys(state.handle); if (!me) return print('no local keys', 'err');
+  async inbox() {
+    if (!state.handle) return print("set a handle first", "err");
+    const authenticated = await isAuthenticated();
+    if (!authenticated) return;
+    try {
+      const arr = await inboxSummary();
+      if (!arr.length) return print("no chats yet", "muted");
+      for (const it of arr) {
+        const badge = it.unread > 0 ? ` [${it.unread} new]` : " [no new]";
+        print(`@${it.handle}${badge}`);
+      }
+      print("Open a chat: chat <handle>")
+    }
+    catch (e) {
+      print("inbox error: " + e.message, "err")
+    }
+  },
+
+  async chat(args) {
+    const peer = args[0];
+    if (!peer) return print("usage: chat <handle>", "err");
+    if (!state.handle) return print("set a handle first");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
 
-    try {
-      // 1) Get recipients PK
-      // try local first, then hit the server
-      let rec = await getContactFor?.(state.handle, to);
-      if (!rec) {
-        const r = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
+    let rec = await getContactFor(state.handle, peer);
+    if (!rec) {
+      try {
+        const r = await xfetch(`/v1/contacts/${encodeURIComponent(peer)}`);
         if (!r.ok) throw new Error('lookup ' + r.status);
         rec = await r.json();
       }
-      const PK_peer = unb64(rec.pk_b64);
+      catch (e) {
+        print("contact not found", "err");
+      }
+    }
 
-      // 2) KEM encaps CK
-      await initOQS?.();
-      const { ct: CK, k } = await kyberEncaps(PK_peer);
+    try {
+      const owner = state.handle;
+      // ensure room exists and decrypt initial history only if needed
+      const num_new = await ensureLocalHistory(owner, peer);
+      const conv = await getConversation(owner, peer);
+      if (!conv) throw new Error("no conversation");
 
-      // 3) Encrypt with AES-GCM(iv = n[0..11])
-      const K = (k.length === 32) ? k : await sha256(k);
+      // Clear screen and enter chat mode
+      term.innerHTML = "";
+      print(`Chatting with @${peer}!`, "ok");
+      print(`To quit type /q`, "muted");
 
-      const iv = randBytes(16);
-      const iv12 = iv.slice(0, 12);
-      const key = await importAesKey(K);
-      const CM = await aesGcmEncrypt(key, iv12, new TextEncoder().encode(text));
+      let added = await syncNewFromServer(owner, peer, conv.conversation_id);
+      added ||= num_new;
 
-      // 4) sign (T || n || CK || CM)
-      const t = Date.now();
-      const M = packMsgBytes(t, iv, CK, CM);
-      const SS = unb64(me.SS_b64);
-      const S = await diliSign(SS, M);
+      await renderLocalChat(owner, peer, added);
 
-      // 5) POST /v1/messages
-      const r2 = await xfetch('/v1/messages', {
-        method: 'POST',
-        body: JSON.stringify({
-          to_handle: to,
-          t,
-          n_b64: b64u(iv),
-          ck_b64: b64u(CK),
-          cm_b64: b64u(CM),
-          s_b64: b64u(S)
-        })
-      });
-      if (!r2.ok) throw new Error('HTTP ' + r2.status);
-      const js = await r2.json();
-      print(`sent -> id=${js.id} to=@${to}`, 'ok');
+      // Mark read
+      xfetch(`/v1/chats/${conv.conversation_id}/read`, { method: "POST"});
+
+      // subcribe to live chat
+      if (!window.Cable) print("⚠️ ActionCable not loaded", "err");
+      chatState?.sub?.unsubscribe?.();
+      chatState = { peer, convoId: conv.conversation_id, sub: subscribeChat(conv.conversation_id, owner, peer) };
     }
     catch (e) {
-      print('send error: ' + e.message, 'err');
+      print("chat error: " + e.message, "err");
     }
-  },
-
-  async inbox() {
-    await listMessages('inbox');
-  },
-
-  async outbox() {
-    await listMessages('outbox');
   }
 }
 
 // ---------- REPL ----------
 input.addEventListener("keydown", async (e) => {
-  if (e.key === "Enter") {
-    const raw = input.value.trim();
-    input.value = "";
-    printHTML('<span class="prompt">$</span> ' + raw);
+  if (e.key !== "Enter") return;
+  const raw = input.value.trim();
+  input.value = "";
+
+  if (chatState) {
+    if (raw === "/q") {
+      // leave chat
+      chatState.sub?.unsubscribe?.();
+      chatState = null;
+      term.innerHTML = "";
+      banner();
+      return;
+    }
+    // otherwise send messages to chatState.peer
     if (!raw) return;
 
-    const [cmd, ...args] = raw.split(/\s+/);
-    const fn = commands[cmd];
-    if (fn) await fn(args);
-    else    print("unknown command: " + cmd, "err");
+    const to = chatState.peer;
+    const text = raw;
+
+    const sentId = await sendMessageAndGetId(to, text);
+    const t = Date.now();
+    printChat(`${new Date(t).toLocaleTimeString()} me`, text);
+    // persist plaintext with server id
+    await upsertPlainMessage(state.handle, to, { id: sentId, t, from: state.handle, to, text });
+    return;
   }
+
+  // Normal REPL
+  printHTML('<span class="prompt">$</span> ' + raw);
+  if (!raw) return;
+
+  const [cmd, ...args] = raw.split(/\s+/);
+  const fn = commands[cmd];
+  if (fn) await fn(args);
+  else    print("unknown command: " + cmd, "err");
 });
 
 banner();

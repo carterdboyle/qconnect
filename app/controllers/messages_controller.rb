@@ -32,7 +32,8 @@ class MessagesController < ApplicationController
 
     message = Message.new(
       sender: sender, recipient: recip,
-      t_ms: t_ms, nonce: n, ck: ck, cm: cm, sig: s
+      t_ms: t_ms, nonce: n, ck: ck, cm: cm, sig: s,
+      conversation: Conversation.between(sender.id, recip.id)
     )
     
     # Verify S over T||n||CK||CM with PS_sender
@@ -44,6 +45,21 @@ class MessagesController < ApplicationController
 
     message.save!
 
+    # Broadcast the json payload to the room
+    payload = {
+      id: message.id,
+      from: sender.handle,
+      to: recip.handle,
+      t: message.t_ms,
+      n_b64: Base64.urlsafe_encode64(message.nonce, padding: false),
+      ck_b64: Base64.urlsafe_encode64(message.ck, padding: false),
+      cm_b64: Base64.urlsafe_encode64(message.cm, padding: false),
+      cm_b64: Base64.urlsafe_encode64(message.cm, padding: false),
+      s_b64: Base64.urlsafe_encode64(message.sig, padding: false),
+      conversation_id: message.conversation_id
+    }
+    ActionCable.server.broadcast("chat:#{message.conversation_id}", payload)
+
     render json: { id: message.id, ok: true }
   rescue ActionController::ParameterMissing => e
     render json: { message: "missing #{e.param}" }, status: :bad_request
@@ -53,6 +69,7 @@ class MessagesController < ApplicationController
     render json: { message: "invalid base64" }, status: :bad_request
   end
 
+  # NOT USED ANYMORE
   # GET /v1/messages?box=inbox|outbox (default inbox)
   def index
     box = params[:box].to_s

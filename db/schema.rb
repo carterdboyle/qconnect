@@ -10,7 +10,17 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_25_121541) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_25_161023) do
+  create_table "chat_reads", force: :cascade do |t|
+    t.integer "conversation_id", null: false
+    t.integer "user_id", null: false
+    t.bigint "last_read_message_id"
+    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.index ["conversation_id", "user_id"], name: "index_chat_reads_on_conversation_id_and_user_id", unique: true
+    t.index ["conversation_id"], name: "index_chat_reads_on_conversation_id"
+    t.index ["user_id"], name: "index_chat_reads_on_user_id"
+  end
+
   create_table "contact_requests", force: :cascade do |t|
     t.integer "requester_id", null: false
     t.integer "recipient_id"
@@ -42,6 +52,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_25_121541) do
     t.index ["user_id"], name: "index_contacts_on_user_id"
   end
 
+  create_table "conversations", force: :cascade do |t|
+    t.string "key", null: false
+    t.integer "a_id", null: false
+    t.integer "b_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["a_id"], name: "index_conversations_on_a_id"
+    t.index ["b_id"], name: "index_conversations_on_b_id"
+    t.index ["key"], name: "index_conversations_on_key", unique: true
+  end
+
   create_table "messages", force: :cascade do |t|
     t.integer "sender_id", null: false
     t.integer "recipient_id", null: false
@@ -52,6 +73,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_25_121541) do
     t.binary "sig", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "conversation_id", null: false
+    t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["recipient_id"], name: "index_messages_on_recipient_id"
     t.index ["sender_id"], name: "index_messages_on_sender_id"
   end
@@ -77,6 +100,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_25_121541) do
     t.index ["handle"], name: "index_users_on_handle", unique: true
   end
 
+  add_foreign_key "chat_reads", "conversations"
+  add_foreign_key "chat_reads", "users"
   add_foreign_key "contact_requests", "users", column: "recipient_id"
   add_foreign_key "contact_requests", "users", column: "requester_id"
   add_foreign_key "contacts", "users"

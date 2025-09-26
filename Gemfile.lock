@@ -83,6 +83,10 @@ GEM
     debug (1.11.0)
       irb (~> 1.10)
       reline (>= 0.3.8)
+    dotenv (3.1.8)
+    dotenv-rails (3.1.8)
+      dotenv (= 3.1.8)
+      railties (>= 6.1)
     drb (2.2.3)
     erb (5.0.2)
     erubi (1.13.1)
@@ -199,6 +203,10 @@ GEM
     rdoc (6.14.2)
       erb
       psych (>= 4.0.0)
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.26.0)
+      connection_pool
     reline (0.6.2)
       io-console (~> 0.5)
     securerandom (0.4.1)
@@ -237,12 +245,15 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
+  actioncable
   debug
+  dotenv-rails
   ffi (~> 1.16)
   importmap-rails
   propshaft
   puma (>= 5.0)
   rails (~> 8.0.2, >= 8.0.2.1)
+  redis
   sqlite3 (>= 2.1)
   stimulus-rails
   tzinfo-data

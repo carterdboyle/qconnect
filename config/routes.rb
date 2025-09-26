@@ -5,6 +5,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  mount ActionCable.server => "/cable"
+
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
@@ -43,5 +45,13 @@ Rails.application.routes.draw do
 
   scope "/v1" do
     resources :messages, only: [ :index, :create ]
+  end
+
+  scope "/v1/chats" do
+    post "open", to: "chats#open"
+    get "summary", to: "chats#summary"
+    post ":id/read", to: "chats#read"
+    get ":id/messages", to: "chats#messages_since"
+    get ":id/last_read", to: "chats#last_read"
   end
 end

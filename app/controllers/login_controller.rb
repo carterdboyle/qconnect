@@ -54,6 +54,13 @@ class LoginController < ApplicationController
 
     if verified
       session[:user_id] = user.id
+      cookies.encrypted[:uid] = {
+        value: user.id,
+        same_site: :lax,
+        secure: Rails.env.production?,
+        domain: :all,
+        httponly: true
+      }
       render json: { ok: true, user_id: user.id }
     else
       sleep 0.15 #delay for enumeration attacks
