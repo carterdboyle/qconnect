@@ -194,10 +194,13 @@ async function listChatLocal(owner, peer, limit=50) {
   })
 }
 
-async function maxLocalMessageId(owner, peer) {
-  const list = await listChatLocal(owner, peer, 1e9);
-  let max = 0; for (const m of list) if (m.id > max) max = m.id;
-  return max;
+async function maxLocalCursor(owner, peer) {
+  const items = await listChatLocal(owner, peer, 1e9);
+  let t = 0, id = 0;
+  for (const m of items) {
+    if (m.t > t || (m.t === t && m.id > id)) { t = m.t; id = m.id; }
+  }
+  return { t_ms: t, id };
 }
 
 async function getServerLastRead(conversationId) {
@@ -207,17 +210,16 @@ async function getServerLastRead(conversationId) {
   return Number(last_read_message_id) || 0;
 }
 
-async function fetchEncryptedSince(conversationId, afterId, limit=500) {
-  const url = `/v1/chats/${encodeURIComponent(conversationId)}/messages?after_id=${encodeURIComponent(afterId)}&limit=${encodeURIComponent(limit)}`;
+async function fetchEncryptedSinceTime(conversationId, afterT, afterId, limit=500) {
+  const url = `/v1/chats/${encodeURIComponent(conversationId)}/messages?after_t=${encodeURIComponent(afterT)}&after_id=${encodeURIComponent(afterId)}&limit=${encodeURIComponent(limit)}`;
   const r = await xfetch(url);
   if (!r.ok) throw new Error("messages_since " + r.status);
   return await r.json();
 }
 
 async function syncNewFromServer(owner, peer, conversationId) {
-  const localMax = await maxLocalMessageId(owner, peer);
-  const arr = await fetchEncryptedSince(conversationId, localMax);
-
+  const { t_ms, id } = await maxLocalCursor(owner, peer);
+  const arr = await fetchEncryptedSinceTime(conversationId, t_ms, id);
   for (const em of arr) {
     const m = await decryptInboundToPlain(owner, em);
     await upsertPlainMessage(owner, peer, m);

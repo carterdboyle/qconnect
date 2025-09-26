@@ -19,6 +19,8 @@ class Message < ApplicationRecord
   # --- Scopes ---
   scope :inbox_for, ->(user_or_id) { where(recipient_id: user_or_id.is_a?(User) ? user_or_id.id : user_or_id ).order(created_at: :desc) }
   scope :outbox_for, ->(user_or_id) { where(sender_id: user_or_id.is_a?(User) ? user_or_id.id : user_or_id ).order(created_at: :desc)}
+  scope :chronological, ->{ order(Arel.sql("t_ms ASC, id ASC")) }
+  scope :recent_first, ->{ order(Arel.sql("t_ms DESC, id DESC")) }
 
   # --- Helper ---
   
