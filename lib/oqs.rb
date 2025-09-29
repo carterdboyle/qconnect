@@ -10,7 +10,9 @@ module OQS
   ffi_lib SHIM_PATH
 
   # Kyber512 (encaps + K)
+  attach_function :pqkem512_keypair, [ :pointer, :pointer ], :int
   attach_function :pqkem512_pk_len, [], :int
+  attach_function :pqkem512_sk_len, [], :int
   attach_function :pqkem512_ct_len, [], :int
   attach_function :pqkem512_k_len, [], :int
   attach_function :pqkem512_encaps_and_k, [:pointer, :pointer, :pointer, :size_t], :int
@@ -19,7 +21,7 @@ module OQS
   module Kyber512
     module_function
     def sizes
-      { pk: OQS.pqkem512_pk_len, ct: OQS.pqkem512_ct_len, k: OQS.pqkem512_k_len }
+      { pk: OQS.pqkem512_pk_len, sk: OQS.pqkem512_sk_len, ct: OQS.pqkem512_ct_len, k: OQS.pqkem512_k_len }
     end
 
     def kem_name
@@ -42,7 +44,9 @@ module OQS
   end
 
   # Dilithium2 (verify-only)
+  attach_function :pqsig2_keypair, [:pointer, :pointer], :int
   attach_function :pqsig2_pk_len, [], :int
+  attach_function :pqsig2_sk_len, [], :int
   attach_function :pqsig2_sig_max_len, [], :int
   attach_function :pqsig2_verify, [:pointer, :pointer, :size_t, :pointer, :size_t], :int
 
