@@ -26,10 +26,10 @@ class ContactRequestsController < ApplicationController
     # Verify S over (T || n || PS_peer ) using PS_requester
     msg = Proto.pack_contact_msg(t_ms:, nonce: n, peer_ps: ps_peer)
     ok = VerificationService.verify(ps: uk.ps, m: msg, sig: sig)
-    return render(json: { message: "bad signature"}, status: :unauthorized) unless ok
+    return render(json: { message: "Bad signature"}, status: :unauthorized) unless ok
 
     # nonce freshness for (n, PS_requester)
-    return render(json: { message: "replay"}, status: :unauthorized) unless NonceLedger.consume!(signer_ps: uk.ps, nonce: n)
+    return render(json: { message: "Nonce is not fresh"}, status: :unauthorized) unless NonceLedger.consume!(signer_ps: uk.ps, nonce: n)
     
     recipient = User.find_by(handle: recipient_handle)
 
@@ -49,7 +49,7 @@ class ContactRequestsController < ApplicationController
   rescue ActionController::ParameterMissing => e
     render json: { message: "Missing param: #{e.param}"}, status: :bad_request
   rescue ArgumentError => e
-    render json: { message: "invalid base64" }, status: :bad_request
+    render json: { message: "Invalid base64" }, status: :bad_request
   end
 
   # GET /v1/contacts/requests

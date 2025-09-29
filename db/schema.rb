@@ -10,15 +10,15 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_26_221900) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_29_152300) do
   create_table "chat_reads", force: :cascade do |t|
     t.integer "conversation_id", null: false
     t.integer "user_id", null: false
     t.bigint "last_read_message_id"
     t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.bigint "last_read_t_ms", default: 0, null: false
     t.index ["conversation_id", "user_id"], name: "index_chat_reads_on_conversation_id_and_user_id", unique: true
     t.index ["conversation_id"], name: "index_chat_reads_on_conversation_id"
+    t.index ["last_read_message_id"], name: "index_chat_reads_on_last_read_message_id"
     t.index ["user_id"], name: "index_chat_reads_on_user_id"
   end
 
@@ -103,6 +103,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_26_221900) do
   end
 
   add_foreign_key "chat_reads", "conversations"
+  add_foreign_key "chat_reads", "messages", column: "last_read_message_id", on_delete: :nullify
   add_foreign_key "chat_reads", "users"
   add_foreign_key "contact_requests", "users", column: "recipient_id"
   add_foreign_key "contact_requests", "users", column: "requester_id"

@@ -40,7 +40,6 @@ class LoginController < ApplicationController
     signature = Base64.urlsafe_decode64(sig_b64)
     challenge = Base64.urlsafe_decode64(blob[:challenge_b64])
     handle = blob[:handle]
-
     user = User.find_by(handle: handle)
     ps_b64 = Base64.urlsafe_encode64(user&.user_key&.ps)
 
@@ -67,8 +66,12 @@ class LoginController < ApplicationController
       render json: { ok: false, message: "Invalid username or signature" }, status: :unauthorized
     end
   rescue ActionController::ParameterMissing
-    render json: { message: "Signed challenge required"}, status: :bad_request
+    render json: { ok: false, message: "Signed challenge required"}, status: :bad_request
   rescue ArgumentError
-    render json: { message: "Signed challenge must be base64" }, status: :bad_request
+    render json: { ok: false, message: "Signed challenge must be base64" }, status: :bad_request
+  rescue TypeError
+    render json: { ok: false, message: 'Public key not found on server. Please call "register" cmd first' }, status: :bad_request
+  rescue => e
+    render json: { ok: false, message: e.message }, status: :bad_request
   end
 end

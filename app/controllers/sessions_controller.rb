@@ -8,8 +8,10 @@ class SessionsController < ApplicationController
   end
 
   def destroy 
-    reset_session
-    cookies.delete(:uid, same_site: :lax, domain: :all, secure: Rails.env.production?)
+    if current_user
+      reset_session
+      cookies.delete(:uid, same_site: :lax, domain: :all, secure: Rails.env.production?)
+    end
     head :no_content
   end
 

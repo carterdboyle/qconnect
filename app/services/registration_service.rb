@@ -37,12 +37,12 @@ class RegistrationService
     # Check K == K'
     k_prime = B64u.dec(kp_b64)
 
-    return { verified: false, error: "kem_mismatch" } unless k_prime.bytesize == 16 && k_prime == k
+    return { verified: false, error: "Kem mismatch" } unless k_prime.bytesize == 16 && k_prime == k
 
     # Verify signature over M using PS
     sig = B64u.dec(sig_b64)
     ok = OQS::Dilithium2.verify(ps, m, sig)
-    return { verified: false, error: "bad_signature" } unless ok
+    return { verified: false, error: "Bad signature" } unless ok
 
     ActiveRecord::Base.transaction do
       user = User.create!(handle:)
@@ -52,7 +52,7 @@ class RegistrationService
     Rails.cache.delete("reg:#{handle}:#{nonce}")
     { verified: true }
   rescue ActiveRecord::RecordNotUnique
-    { verified: false, error: "handle_taken" }
+    { verified: false, error: "Handle taken" }
   rescue => e
     { verified: false, error: e.message }
   end

@@ -57,12 +57,14 @@ class ChatsController < ApplicationController
       return render json: { message: "forbidden" }, status: :forbidden
     end
     cr = ChatRead.find_by(conversation_id: convo.id, user_id: current_user.id)
+    tms = cr&.last_read_message_id ? Message.where(id: cr.last_read_message_id).pick(:t_ms) : 0
+    
     render json: { 
       last_read_message_id: cr&.last_read_message_id || 0,
-      last_read_t_ms: cr&.last_read_t_ms || 0,
+      last_read_t_ms: tms || 0,
     }
   rescue ActiveRecord::RecordNotFound
-    render json: { message: "no such user or conversation" }, status: :not_found
+    render json: { message: "No such user or conversation" }, status: :not_found
   end
 
   # GET /v1/chats/summary
@@ -79,9 +81,10 @@ class ChatsController < ApplicationController
       # unread: messages in convo to me with id > read marker
       read = ChatRead.find_by(conversation_id: c.id, user_id: current_user.id)
       last_read_id = read&.last_read_message_id || 0
-      last_read_t = read&.last_read_t_ms || 0
+      last_read_t = last_read_id ? Message.where(id: last_read_id).pick(:t_ms) : 0
+
       unread = c.messages.where(recipient_id: current_user.id)
-                        .where("t_ms > ? OR (t_ms = ? AND id > ?)", last_read_t, last_read_t, last_read_id)
+                        .where("(t_ms, id) > (?, ?)", last_read_t || 0, last_read_id || 0)
                         .count
 
       peer = User.find_by(id: peer_id)
@@ -95,9 +98,15 @@ class ChatsController < ApplicationController
     convo = Conversation.find(params[:id])
     # last message addressed to me in this conversation
     last_to_me = convo.messages.where(recipient_id: current_user.id).order(Arel.sql("t_ms DESC, id DESC")).first
-    cr = ChatRead.find_or_create_by!(conversation: convo, user: current_user)
+    # cr = ChatRead.find_or_create_by!(conversation: convo, user: current_user)
     if last_to_me
-      cr.update!(last_read_message_id: last_to_me.id, last_read_t_ms: last_to_me.t_ms)
+      # cr.update!(last_read_message_id: last_to_me.id, last_read_t_ms: last_to_me.t_ms)
+      ChatRead.upsert({
+        conversation_id: convo.id,
+        user_id: current_user.id,
+        last_read_message_id: last_to_me.id,
+        updated_at: Time.current },
+        unique_by: %i[conversation_id user_id])
     end
     head :no_content
   rescue ActiveRecord::RecordNotFound

@@ -289,7 +289,7 @@ async function isAuthenticated() {
     const session_res = await xfetch('/v1/session');
     const session = await session_res.json();
     if (!session.user_id || !session.handle ) {
-      print("user unauthenticated", "err");
+      print('- User unauthenticated. Call "login" cmd', "err");
       return false;
     }
   }
@@ -337,6 +337,26 @@ function packContactMsg(t_ms, nonce16, peerPS) {
 
 function packMsgBytes(t_ms, n16, ck, cm) {
   return concatU8(be64(t_ms), n16, ck, cm);
+}
+
+// ---------- Day helpers ------------------------
+const dayKey = (t) => {
+  const d = new Date(typeof t === 'number' ? t : Number(t));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+const isToday = (t) => dayKey(t) === dayKey(Date.now());
+const dayLabel = (t) =>
+  new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric"})
+    .format(new Date(t));
+
+// Remember last printed day for the open chat
+function ensureChatStateDay(key) { if (chatState) chatState.lastDayKey = key; }
+
+// print a muted day divider (but not for today)
+function maybePrintDayDivider(t) {
+  if (!isToday(t)) {
+    print(`—— ${dayLabel(t)} ——`, "muted")
+  }
 }
 
 // ---------- Crypto helpers ---------------------
@@ -394,7 +414,7 @@ async function ensureLocalHistory(owner, peer) {
     body: JSON.stringify({ handle: peer })
   });
 
-  if (!r.ok) throw new Error("open " + r.status);
+  if (!r.ok) throw new Error(`open ${r.status} (${(await r.json()).message})`);
   const { conversation_id, history } = await r.json();
   await putConversation(owner, peer, { conversation_id, last_read_id: null });
 
@@ -421,8 +441,17 @@ function subscribeChat(conversation_id, owner, peer) {
         if (data.from === owner) return;
 
         await appendIncoming(owner, peer, data);
-        const time = new Date(data.t).toLocaleTimeString();
         const last = await lastMessageLocal(owner, peer);
+        if (!last) return;
+        
+        const k = dayKey(last.t);
+        if (chatState?.lastDayKey !== k) {
+          // only show divider for non-today buckets
+          maybePrintDayDivider(last.t);
+          ensureChatStateDay(k);
+        }
+        
+        const time = new Date(data.t).toLocaleTimeString();
         printChat(`${time} @${data.from}`, `${last?.text ?? "[decrypt failed]"}`);
 
         // Mark as read when receiving
@@ -435,7 +464,16 @@ function subscribeChat(conversation_id, owner, peer) {
 
 async function renderLocalChat(owner, peer, added) {
   const list = await listChatLocal(owner, peer);
+  
+  let lastKey = null;
   list.forEach((m, i) => {
+    const k = dayKey(m.t);
+    if (k !== lastKey) {
+      // only show divider if this block isn't today
+      maybePrintDayDivider(m.t);
+      lastKey = k;
+    }
+
     const who = (m.from === owner) ? "me" : "@"+m.from;
     const time = new Date(m.t).toLocaleTimeString();
     const text = (m.text ?? "[sent]");
@@ -444,6 +482,7 @@ async function renderLocalChat(owner, peer, added) {
       print(`${added} new message${added > 1 ? "s" : ""}!\n`, "ok")
     printChat(`${time} ${who}`, text);
   });
+  ensureChatStateDay(lastKey || dayKey(Date.now()));
 }
 
 // ---------- OQS via your oqsClient.js ----------
@@ -487,7 +526,7 @@ function banner() {
   print('Type "help" for commands.');
 }
 
-// Stats
+// States
 let state = { handle: null };
 let chatState = null;
 
@@ -581,31 +620,31 @@ const commands = {
 
   async handle(args) {
     const next = args[0];
-    if (!args[0]) return print("usage: handle <name>", "err");
+    if (!args[0]) return print("- Usage: handle <name>", "err");
 
-    if (state.handle && state.handle !== next) {
-      // clear server session so subsequent calls are unauthenticated
-      try {
-        await xfetch("/v1/session", { method: "DELETE" });
-        await refreshCsrf();
-        print("SERVER SESSION CLEARED", "muted");
-      }
-      catch(_) { /* ignore */ }
+    try {
+      await xfetch("/v1/session", { method: "DELETE" });
+      await refreshCsrf();
+      print("- Server session cleared", "ok");
     }
+    catch(_) { /* ignore */ }
+
     state.handle = next;
-    print("handle set -> " + state.handle, "ok");
-    print('RUN "LOGIN" TO AUTHENTICATE THIS HANDLE', "muted");
+    print("- Handle set: " + state.handle, "ok");
+    print("- Run 'login' to authenticate current handle", "muted");
   },
 
   async status() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (rec) print(`keys present for ${state.handle} [created ${new Date(rec.createdAt).toISOString()}]`, "ok");
-    else     print(`no keys for ${state.handle}`, "err");
+    if (rec) print(`- Keys present for ${state.handle} [created ${new Date(rec.createdAt).toISOString()}]`, "ok");
+    else     print(`- No keys for ${state.handle}`, "err");
   },
 
   async genkeys() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
+    const rec = await loadKeys(state.handle);
+    if (rec) return print("- Keys already exist for this user. Contact administrator to reset keys.", "err");
     try {
       const { PS, SS, PK, SK } = await genKeypairs();
       await saveKeys({
@@ -614,26 +653,26 @@ const commands = {
         PK_b64: b64u(PK), SK_b64: b64u(SK),
         createdAt: Date.now()
       });
-      print("generated ML-DSA-44 + ML-KEM-512 keys", "ok");
+      print("- Generated ML-DSA-44 + ML-KEM-512 keys", "ok");
     } catch (e) {
-      print("keygen failed: " + e.message, "err");
+      print("- Keygen failed: " + e.message, "err");
     }
   },
 
   async show(args) {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (!rec) return print("no keys; run genkeys", "err");
+    if (!rec) return print("- No keys. Run 'genkeys' cmd", "err");
     const what = args[0];
     if      (what === "ps") print(rec.PS_b64);
     else if (what === "pk") print(rec.PK_b64);
-    else                    print("usage: show ps|pk", "err");
+    else                    print("- Usage: show <ps|pk>", "err");
   },
 
   async wipe() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     await wipeKeys(state.handle);
-    print("keys wiped for " + state.handle, "ok");
+    print("- Keys wiped for " + state.handle, "ok");
   },
 
   clear() {
@@ -642,9 +681,9 @@ const commands = {
   },
 
   async register() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (!rec) return print("no keys; run genkeys", "err");
+    if (!rec) return print("- No keys. Run genkeys", "err");
 
     try {
       // 1) send public keys
@@ -657,7 +696,7 @@ const commands = {
           pk_b64: rec.PK_b64
         })
       });
-      if (!r1.ok) throw new Error("init " + r1.status);
+      if (!r1.ok) throw new Error(`init ${r1.status} (${(await r1.json()).message})`);
       const { m_b64, ct_b64, nonce } = await r1.json();
 
       // 2) compute S and K'
@@ -681,19 +720,19 @@ const commands = {
           nonce: nonce
         })
       });
-      if (!r2.ok) throw new Error("verify " + r2.status);
+      if (!r2.ok) throw new Error(`verify ${r2.status} (${(await r2.json()).error})`);
       const done = await r2.json();
-      if (done.verified) print("registered ✔ " + JSON.stringify(done), "ok");
-      else               print("registration failed: " + JSON.stringify(done), "err");
+      if (done.verified) print("- Registered ✔", "ok");
+      else               print("- Registration failed: " + JSON.stringify(done.error), "err");
     } catch (e) {
-      print("registration error: " + e.message, "err");
+      print("- Registration error: " + e.message, "err");
     }
   },
 
   async login() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (!rec) return print("no keys; run genkeys", "err");
+    if (!rec) return print("- No keys. Run genkeys", "err");
 
     try {
       // 1) ask server for challenge (stored in session server-side)
@@ -702,7 +741,7 @@ const commands = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ handle: state.handle })
       });
-      if (!r1.ok) throw new Error("challenge " + r1.status);
+      if (!r1.ok) throw new Error(`challenge ${r1.status} (${(await r1.json()).message})`);
       const { challenge_b64, nonce } = await r1.json();
 
       // 2) sign the challenge with SS (Dilithium)
@@ -716,35 +755,34 @@ const commands = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signature_b64: b64u(S), nonce: nonce })
       });
-      if (!r2.ok) throw new Error("submit " + r2.status);
+      if (!r2.ok) throw new Error(`submit ${r2.status} (${(await r2.json()).message})`);
       const done = await r2.json();
 
-      if (done.ok) print(`logged in sucessfully ✔ (id=${done.user_id})`, "ok");
-      else         print(`login failed X: ${JSON.stringify(done.message)}`, "err");
+      if (done.ok) print(`- Logged in sucessfully ✔`, "ok");
+      else         print(`- Login failed X: ${JSON.stringify(done.message)}`, "err");
     } catch (e) {
-      print("login error: " + e.message, "err");
+      print("- Login error: " + e.message, "err");
     }
   },
 
   async request(args) {
     const to = args[0];
-    if (!to) return print("usage: request <handle> [note...]", "err");
+    if (!to) return print("- Usage: request <handle> [note...]", "err");
     const note = args.slice(1).join(" ");
 
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (!rec) return print("no keys; run genkeys", "err");
+    if (!rec) return print("- No keys. Run genkeys", "err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
 
     try {
       const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(to)}`);
-      if (rShow.status === 404) return print("no such user", "err");
-      if (!rShow.ok) throw new Error("lookup " + rShow.status);
+      if (!rShow.ok) throw new Error(`lookup ${rShow.status} (${(await rShow.json()).message})`);
       
       const { ps_b64, contact: is_contact } = await rShow.json();
-      if (is_contact) return print("Requestee is already a contact!", "err");
+      if (is_contact) throw new Error("duplication (Requestee is already a contact!)", "err");
       const PS_peer = unb64(ps_b64);
 
       // Build tuple
@@ -768,18 +806,18 @@ const commands = {
         })
       });
 
-      if (!r.ok) throw new Error("HTTP " + r.status);
+      if (!r.ok) throw new Error(`HTTP ${r.status$} (${(await r.json()).message})`);
       
       const js = await r.json();
-      print(`request send -> id=${js.id} to=${js.recipient_handle}`, "ok");
+      print(`- Request sent to ${js.recipient_handle}!`, "ok");
     } 
     catch (e) { 
-      print("request error: " + e.message, "err"); 
+      print("- Request error: " + e.message, "err"); 
     }
   },
 
   async requests() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
@@ -788,17 +826,17 @@ const commands = {
       const r = await xfetch("/v1/contacts/requests");
       if (!r.ok) throw new Error("HTTP " + r.status);
       const arr = await r.json();
-      if (!arr.length) return print("no pending requests", "muted");
-      arr.forEach(it => print(`id=${it.id} from=${it.from} note="${it.note||""}" at=${it.at}`));
+      if (!arr.length) return print("- No pending requests", "muted");
+      arr.forEach(it => print(`- id: ${it.id} from: ${it.from} ${it.note ? `note: "${it.note}" ` : ""}at=${it.at}`));
     } catch (e) { print("requests error: " + e.message, "err"); }
   },
 
   async accept(args) {
     const id = args[0];
-    if (!id) return print("usage: accept <request_id>", "err");
-    if (!state.handle) return print("set a handle first", "err");
+    if (!id) return print("- Usage: accept <request_id>", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const rec = await loadKeys(state.handle);
-    if (!rec) return print("no keys; run genkeys","err");
+    if (!rec) return print("No keys. Run genkeys","err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
@@ -807,13 +845,13 @@ const commands = {
       const rs = await xfetch("/v1/contacts/requests");
       const list = await rs.json();
       const row = list.find(r => String(r.id) === String(id));
-      if (!row) return print("unknown request id", "err");
+      if (!row) throw new Error("unknown request id", "err");
 
 
       const rShow = await xfetch(`/v1/contacts/${encodeURIComponent(row.from)}`)
       if (!rShow.ok) throw new Error("lookup " + rShow.status);
-      const { ps_b64: from_ps_b64, contact: is_contact } = await rShow.json();
-      if (is_contact) return print("Requestee is already a contact!", "err");
+      const { ps_b64: from_ps_b64, contact: is_contact, handle: to } = await rShow.json();
+      if (is_contact) return print("requestee is already a contact!", "err");
 
       const PS_requester = unb64(from_ps_b64);
 
@@ -830,20 +868,20 @@ const commands = {
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const js = await r.json();
-      print(`accepted -> status=${js.status}`, "ok");
+      print(`- @${to} added as a contact!`, "ok");
 
       // pull fresh contacts from server
       await syncContacts(state.handle);
     }
     catch (e) {
-      print("accept error: " + e.message, "err");
+      print("- Accept error: " + e.message, "err");
     }
   },
 
   async decline(args) {
     const id = args[0];
-    if (!id) return print("usage: decline <request_id>", "err");
-    if (!state.handle) return print("set a handle first", "err");
+    if (!id) return print("- Usage: decline <request_id>", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
@@ -856,15 +894,15 @@ const commands = {
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const js = await r.json();
-      print(`declined -> status=${js.status}`, "ok");
+      print(`- Contact request declined!`, "ok");
     }
     catch (e) {
-      print("decline error: " + e.message, "err");
+      print("- Decline error: " + e.message, "err");
     }
   },
 
   async contacts() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return; 
@@ -872,23 +910,23 @@ const commands = {
     try {
       await syncContacts(state.handle);
       const list = await listContactsLocal(state.handle);
-      if (!list.length) return print("no contacts", "muted");
+      if (!list.length) return print("- No contacts", "muted");
       list.forEach(c => {
-        print(`@${c.handle}  (id=${c.user_id})`);
+        print(`@${c.handle}`);
       });
     }
     catch (e) {
-      print("contacts error: " + e.message, "err");
+      print("- Contacts error: " + e.message, "err");
     }
   },
 
   async inbox() {
-    if (!state.handle) return print("set a handle first", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
     try {
       const arr = await inboxSummary();
-      if (!arr.length) return print("no chats yet", "muted");
+      if (!arr.length) return print("- No chats yet", "muted");
       for (const it of arr) {
         const badge = it.unread > 0 ? ` [${it.unread} new]` : " [no new]";
         print(`@${it.handle}${badge}`);
@@ -902,25 +940,20 @@ const commands = {
 
   async chat(args) {
     const peer = args[0];
-    if (!peer) return print("usage: chat <handle>", "err");
-    if (!state.handle) return print("set a handle first");
+    if (!peer) return print("- Usage: chat <handle>", "err");
+    if (!state.handle) return print("- Set a handle first", "err");
 
     const authenticated = await isAuthenticated();
     if (!authenticated) return;
 
-    let rec = await getContactFor(state.handle, peer);
-    if (!rec) {
-      try {
+    try {
+      let rec = await getContactFor(state.handle, peer);
+      if (!rec) {
         const r = await xfetch(`/v1/contacts/${encodeURIComponent(peer)}`);
-        if (!r.ok) throw new Error('lookup ' + r.status);
+        if (!r.ok) throw new Error(`lookup ${r.status} (${(await r.json()).message})`);
         rec = await r.json();
       }
-      catch (e) {
-        print("contact not found", "err");
-      }
-    }
 
-    try {
       const owner = state.handle;
       // ensure room exists and decrypt initial history only if needed
       const num_new = await ensureLocalHistory(owner, peer);
@@ -935,15 +968,15 @@ const commands = {
       let added = await syncNewFromServer(owner, peer, conv.conversation_id);
       added ||= num_new;
 
-      await renderLocalChat(owner, peer, added);
-
-      // Mark read
-      markRead(conv.conversation_id, owner, peer);
-
       // subcribe to live chat
       if (!window.Cable) print("⚠️ ActionCable not loaded", "err");
       chatState?.sub?.unsubscribe?.();
       chatState = { peer, convoId: conv.conversation_id, sub: subscribeChat(conv.conversation_id, owner, peer) };
+      
+      await renderLocalChat(owner, peer, added);
+
+      // Mark read
+      markRead(conv.conversation_id, owner, peer);
     }
     catch (e) {
       print("chat error: " + e.message, "err");
@@ -974,6 +1007,11 @@ input.addEventListener("keydown", async (e) => {
 
     const sentId = await sendMessageAndGetId(to, text);
     const t = Date.now();
+    const k = dayKey(t);
+    if (chatState?.lastDayKey !== k) {
+      print(`—— ${dayLabel(t)} ——`, "muted")
+      ensureChatStateDay(k);
+    }
     printChat(`${new Date(t).toLocaleTimeString()} me`, text);
     // persist plaintext with server id
     await upsertPlainMessage(state.handle, to, { id: sentId, t, from: state.handle, to, text });
