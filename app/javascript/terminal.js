@@ -352,11 +352,9 @@ const dayLabel = (t) =>
 // Remember last printed day for the open chat
 function ensureChatStateDay(key) { if (chatState) chatState.lastDayKey = key; }
 
-// print a muted day divider (but not for today)
-function maybePrintDayDivider(t) {
-  if (!isToday(t)) {
-    print(`—— ${dayLabel(t)} ——`, "muted")
-  }
+// print a muted day divider
+function printDayDivider(t) {
+  print(`—— ${dayLabel(t)} ——`, "muted");
 }
 
 // ---------- Crypto helpers ---------------------
@@ -446,8 +444,8 @@ function subscribeChat(conversation_id, owner, peer) {
         
         const k = dayKey(last.t);
         if (chatState?.lastDayKey !== k) {
-          // only show divider for non-today buckets
-          maybePrintDayDivider(last.t);
+          // only show divider when days change
+          printDayDivider(last.t);
           ensureChatStateDay(k);
         }
         
@@ -467,19 +465,19 @@ async function renderLocalChat(owner, peer, added) {
   
   let lastKey = null;
   list.forEach((m, i) => {
-    const k = dayKey(m.t);
-    if (k !== lastKey) {
-      // only show divider if this block isn't today
-      maybePrintDayDivider(m.t);
-      lastKey = k;
-    }
-
     const who = (m.from === owner) ? "me" : "@"+m.from;
     const time = new Date(m.t).toLocaleTimeString();
     const text = (m.text ?? "[sent]");
     added && 
       ((list.length - added) == i) &&
       print(`${added} new message${added > 1 ? "s" : ""}!\n`, "ok")
+      
+    const k = dayKey(m.t);
+    if (k !== lastKey) {
+      // only show divider if this block isn't today
+      printDayDivider(m.t);
+      lastKey = k;
+    }
     printChat(`${time} ${who}`, text);
   });
   ensureChatStateDay(lastKey || dayKey(Date.now()));
