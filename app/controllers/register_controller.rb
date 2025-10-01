@@ -23,7 +23,7 @@ class RegisterController < ApplicationController
     
     res = RegistrationService.verify(handle:, sig_b64:, kp_b64:, nonce:)
     if !res[:verified]
-      render json: { ok: false, error: res["error"] }, status: :unauthorized
+      render json: { ok: false, error: res[:error] }, status: :unauthorized
     else
       render json: res
     end
