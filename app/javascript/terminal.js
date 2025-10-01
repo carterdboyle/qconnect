@@ -480,7 +480,7 @@ async function renderLocalChat(owner, peer, added) {
     }
     printChat(`${time} ${who}`, text);
   });
-  ensureChatStateDay(lastKey || dayKey(Date.now()));
+  ensureChatStateDay(lastKey);
 }
 
 // ---------- OQS via your oqsClient.js ----------
