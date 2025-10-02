@@ -1028,3 +1028,5 @@ input.addEventListener("keydown", async (e) => {
 
 banner();
 setTimeout(() => input.focus(), 50);
+
+export { renderLocalChat, upsertPlainMessage, putConversation, listChatLocal, dayKey };

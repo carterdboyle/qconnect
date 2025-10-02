@@ -5,3 +5,6 @@ development:
 production:
   adapter: redis
   url: <%= ENV["REDIS_URL"] || "redis://redis:6379/1" %>
+
+test:
+  adapter: async
