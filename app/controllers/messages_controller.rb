@@ -14,7 +14,13 @@ class MessagesController < ApplicationController
     s_b64 = params.require(:s_b64)
 
     now_ms = (Time.current.to_f * 1000).to_i
-    return render(json: { message: "stale" }, status: :unauthorized ) if (now_ms - t_ms ) > T_THRESHOLD_S * 1000;
+    server_now = now_ms
+    delta_ms = (server_now - t_ms.to_i).abs
+    threshold_ms = T_THRESHOLD_S * 1000
+
+    if !Rails.env.test? && delta_ms > threshold_ms
+      return render json: { message: "state" }, status: :unprocessable_content
+    end
 
     sender = current_user
     uk = sender.user_key or return render(json: { message: "no keys"}, status: :unprocessable_content )

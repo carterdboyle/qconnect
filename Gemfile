@@ -28,6 +28,12 @@ group :development, :test do
   gem "sqlite3", ">= 2.1"
 end
 
+group :test do
+  gem "capybara"
+  gem "cuprite"
+  gem "database_cleaner-active_record"
+end
+
 group :production do
   gem "pg"
 end

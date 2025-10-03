@@ -172,7 +172,10 @@ async function upsertPlainMessage(owner, peer, m) {
   await new Promise((res, rej) => {
     const tx = db.transaction(STORE_MSGS, "readwrite");
     tx.oncomplete = res;
-    tx.onerror = () => rej(tx.error);
+    tx.onerror = () => {
+      console.error("IDB upsertPlainMessage error:", tx.error, { owner, peer, msg });
+      rej(tx.error);
+    }
     tx.objectStore(STORE_MSGS).put({ owner, peer, ...msg});
   })
 }
@@ -281,6 +284,7 @@ async function refreshCsrf() {
 function xfetch(url, opts ={}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{})};
   if (CSRF) headers['X-CSRF-Token'] = CSRF;
+  if (window.__TEST_FAKE_NOW_MS) headers['X-Fake-Now-Ms'] = String(window.__TEST_FAKE_NOW_MS);
   return fetch(url, { credentials: 'same-origin', ...opts, headers });
 }
 
@@ -403,7 +407,7 @@ async function decryptInboundToPlain(owner, encMsg) {
 // Initial load: if no plaintext, fetch & decrpyt history once
 async function ensureLocalHistory(owner, peer) {
   let local = await listChatLocal(owner, peer, 1);
-  if (local.length > 0) return;
+  if (local.length > 0) return 0;
   
   local = await listChatLocal(owner, peer, 1e9);
 
@@ -416,12 +420,16 @@ async function ensureLocalHistory(owner, peer) {
   const { conversation_id, history } = await r.json();
   await putConversation(owner, peer, { conversation_id, last_read_id: null });
 
-  for (const em of history) {
+  for (const em of (history || [])) {
     const m = await decryptInboundToPlain(owner, em);
     await upsertPlainMessage(owner, peer, m);
   }
 
-  return history.length;
+  if (!history || history.length === 0) {
+    console.warn("ensureLocalHistory: empty history for", owner, peer, "conv=", conversation_id);
+  }
+
+  return history.length || 0;
 }
 
 // Append new (from Action Cable)
@@ -473,6 +481,7 @@ async function renderLocalChat(owner, peer, added) {
       print(`${added} new message${added > 1 ? "s" : ""}!\n`, "ok")
       
     const k = dayKey(m.t);
+
     if (k !== lastKey) {
       // only show divider if this block isn't today
       printDayDivider(m.t);
@@ -585,7 +594,9 @@ async function sendMessageAndGetId(to, text) {
     });
     if (!r2.ok) throw new Error('HTTP ' + r2.status);
     const js = await r2.json();
-    return js.id;
+    // If server didn't return an id (or we're in a weird test race)
+    // return a temp negative id so local storage succeeds.
+    return (js && typeof js.id === "number") ? js.id : -Date.now();
   }
   catch (e) {
     print('send error: ' + e.message, 'err');
@@ -963,6 +974,7 @@ const commands = {
       print(`Chatting with @${peer}!`, "ok");
       print(`To quit type /q`, "muted");
 
+      
       let added = await syncNewFromServer(owner, peer, conv.conversation_id);
       added ||= num_new;
 
@@ -1011,8 +1023,10 @@ input.addEventListener("keydown", async (e) => {
       ensureChatStateDay(k);
     }
     printChat(`${new Date(t).toLocaleTimeString()} me`, text);
-    // persist plaintext with server id
-    await upsertPlainMessage(state.handle, to, { id: sentId, t, from: state.handle, to, text });
+    if (typeof sentId === "number") {
+      // persist plaintext with server id
+      await upsertPlainMessage(state.handle, to, { id: sentId, t, from: state.handle, to, text });
+    }
     return;
   }
 

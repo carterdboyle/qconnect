@@ -35,6 +35,9 @@ body {
     );
   mix-blend-mode: screen;
 }
+
+body[data-env="test"] .scan { display: none !important}
+
 #terminal {
   height: 60vh; min-height: 420px; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
