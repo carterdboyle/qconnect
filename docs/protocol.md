@@ -2,9 +2,7 @@
 
 ## Definitions
 
-$$
-\begin{align*}\\
-
+\begin{align*}
 PS &: \text{Public key (for signing)}\\
 SS &: \text{Secret key (for signing)}\\
 PK &: \text{Public key (for KEM)}\\
@@ -12,12 +10,9 @@ SK &: \text{Secret key (for KEM)}\\
 K &: \text{Symmetric encryption key}\\
 N &: \text{List of used nonces}\\
 B &: \text{Contact book}
-
 \end{align*}
-$$
-$$
-\begin{align*}
 
+\begin{align*}
 \text{Sign}_{SS}(M) &= S && \text{Signs message } M \text{ using private key } SS \text{ creating signature } S \text{.}\\
 \text{Sign}_{PS}^{-1}(S, M) &= \{0,1\} && \text{Verifies message } M \text{ matches signature } S \text{ using public key } PS \text{.}\\
 &&& \text{Outputs 1 when signature matches.}\\
@@ -31,385 +26,276 @@ $$
 \\
 \text{Now()} &= T && \text{Outputs the current timestamp.}
 \end{align*}
-$$
 
-<div style="page-break-after: always;"></div>
+\pagebreak
 
 ## Registration
 
-$$
 \text{Bob registers his keys with the server.}
-$$
 
-$$
 \begin{align*}
-
 \text{Bob has} &: PS_{\text{Bob}}, SS_{\text{Bob}}, PK_{\text{Bob}}, SK_{\text{Bob}}\\
 \\
-
 \\
 \text{Bob sends to server} &: PS_{\text{Bob}}, PK_{\text{Bob}}
 \\
 \\
-
 \text{Server calculates} &:\\
-
 M &= \{0,1\}^{128}
 && \text{Generate signing challenge.}
 \\
-
 K &= \{0,1\}^{128}
 && \text{Generate KEM challenge.}
 \\
-
 C &= \text{KEM}_{PK_{\text{Bob}}}(K)
 && \text{Encapsulate KEM challenge.}
 \\
-
 \\
 \text{Server sends to Bob} &: M, C
 \\
 \\
-
 \text{Bob calculates} &:\\
-
 S &= \text{Sign}_{SS_\text{Bob}}(M)
 && \text{Sign the signing challenge.}
 \\
-
 K' &= \text{KEM}^{-1}_{SK_\text{Bob}}(C)
 && \text{Decapsulate the KEM challenge.}
 \\
-
 \\
 \text{Bob sends to Server} &:S, K'
 \\
 \\
-
 \text{Server calculates} &:\\
-
 S_\text{Verify} &= \text{Sign}^{-1}_{PS_{\text{Bob}}}(S, M)
 && \text{Verify the signature of the signing challenge.}
 \\
-
 K &= K'
 && \text{Verify the KEM challenge response is correct.}
 \\
-
 &&& \text{Once verified, Server records Bob's keys.}
 \end{align*}
-$$
 
-<div style="page-break-after: always;"></div>
+\pagebreak
 
 ## Contact Request and Accept
 
-$$
 \text{Bob adds Alice as a contact.}
-$$
-$$
 \begin{align*}
-
 \text{Bob has} &: SS_{\text{Bob}}, PS_{\text{Alice}}, T_{\text{Threshold}}, B, N\\
 \text{Server has} &: PS_{\text{Bob}}, PS_{\text{Alice}}, T_{\text{Threshold}}, B, N\\
 \text{Alice has} &: SS_{\text{Alice}}, PS_{\text{Bob}}, T_{\text{Threshold}}, B, N\\
 \\
-
 \text{Bob calculates} &:\\
-
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-
 n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
 && \text{Generate nonce.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add nonce to list.}
 \\
-
 S &= \text{Sign}_{SS_{\text{Bob}}}(T||n||PS_{\text{Alice}})
 && \text{Sign contact request.}
 \\
-
 B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
 && \text{Mark Alice as able to send messages to Bob.}
 \\
-
 \\
 \text{Bob sends to server} &: S, T, n, PS_{\text{Alice}}
 \\
 \\
-
 \text{Server calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Bob}}}(S, T||n||PS_{\text{Alice}})
 && \text{Verify contact request is from Bob.}
 \\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify contact request is recent.}
 \\
-
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add old nonce to list.}
 \\
-
 B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
 && \text{Mark Alice as able to send messages to Bob.}
 \\
-
 \\
 \text{Server sends to Alice} &: S, T, n
 \\
 \\
-
 \text{Alice calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Bob}}}(S, T||n||PS_{\text{Alice}})
 && \text{Verify contact request is from Bob.}\\
 &&& \text{If } S_{\text{Verify}} = 0 \text{, reject.}\\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify contact request is recent.}
 \\
-
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add old nonce to list.}
 \\
-
 B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
 && \text{Mark Alice as able to send messages to Bob.}
+\displaybreak[4]
 \\
-
 \\
-
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-
 n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Alice}}) \notin N
 && \text{Generate nonce.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Alice}})\}
 && \text{Add nonce to list.}
 \\
-
 S &= \text{Sign}_{SS_{\text{Alice}}}(T||n||PS_{\text{Bob}})
 && \text{Sign contact request.}
 \\
-
 B &= B \cup \{(PS_{\text{Bob}}, PS_{\text{Alice}})\}
-&& \text{Mark Bob as able to send messages to Alice.}
-\\
-
+&& \text{Mark Bob as able to send messages to Alice.}\\
 \\
 \text{Alice sends to server} &: S, T, n, PS_{\text{Bob}}
-\\
-\\
 \end{align*}
-$$
-
-$$
 \begin{align*}
 \text{Server calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Alice}}}(S, T||n||PS_{\text{Bob}})
 && \text{Verify contact request is from Alice.}\\
 &&& \text{If } S_{\text{Verify}} = 0 \text{, reject.}\\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify contact request is recent.}
 \\
-
 (n, PS_{\text{Alice}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Alice}})\}
 && \text{Add old nonce to list.}
 \\
-
 B &= B \cup {(PS_{\text{Bob}}, PS_{\text{Alice}})}
 && \text{Mark Bob as able to send messages to Alice.}
 \\
-
 \\
 \text{Server sends to Bob} &: S, T, n
 \\
 \\
-
 \text{Bob calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Alice}}}(S, T||n||PS_{\text{Bob}})
 && \text{Verify contact request is from Alice.}\\
 &&& \text{If } S_{\text{Verify}} = 0 \text{, reject.}\\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify contact request is recent.}
 \\
-
 (n, PS_{\text{Alice}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Alice}})\}
 && \text{Add old nonce to list.}
 \\
-
 B &= B \cup {(PS_{\text{Bob}}, PS_{\text{Alice}})}
 && \text{Mark Bob as able to send messages to Alice.}
 \\
 \end{align*}
-$$
 
-<div style="page-break-after: always;"></div>
+\pagebreak
 
 ## Public Key (for KEM) Distribution
 
-$$
 \text{Alice sends a public key (for KEM) } PK_{\text{Alice}} \text{ to Bob.}
-$$
-$$
 \begin{align*}
-
 \text{Alice has} &: SS_{\text{Alice}}, PK_{\text{Alice}}\\
 \text{Server has} &: PS_\text{Alice}\\
 \text{Bob has} &: PS_{\text{Alice}}\\
 \\
-
 \text{Alice calculates} &:\\
-
 S &= \text{Sign}_{SS_{\text{Alice}}}(PK_{\text{Alice}})
 && \text{Signs public key.}\\
-
 \\
 \text{Alice sends to Server} &: S, PK_{\text{Alice}}\\
-
 \\
 \text{Server calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Alice}}}(S, PK_{\text{Alice}})
 && \text{Verify message is from Alice.}\\
 &&& \text{If } S_{\text{Verify}} = 0, \text{reject.}\\
-
 \\
 \text{Server sends to Bob} &: S, PK_{\text{Alice}}\\
-
 \\
 \text{Bob calculates:}\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Alice}}}(S, PK_{\text{Alice}})
 && \text{Verify message is from Alice.}\\
 &&& \text{If } S_{\text{Verify}} = 0, \text{reject.}\\
-
 \end{align*}
-$$
 
-<div style="page-break-after: always;"></div>
+\pagebreak
 
 ## Bob sends message to Alice
 
-$$
 \text{Bob sends a given message } M \text{ to Alice}.
-$$
-$$
 \begin{align*}
 \text{Bob has} &: SS_{\text{Bob}}, PK_{\text{Alice}}, N\\
 \text{Server has} &: PS_{\text{Bob}}, T_{\text{Threshold}}, B, N\\
 \text{Alice has} &: SK_{\text{Alice}}, PS_{\text{Bob}}, T_{\text{Threshold}}, B, N\\
 \end{align*}
-$$
-$$
 \begin{align*}
 \text{Bob calculates} &:\\
-
 K &= \{0, 1\}^{n}
 && \text{Generates key of length } n \text{.}\\
-
 C_{K} &= \text{KEM}_{PK_{\text{Alice}}}(K)
 && \text{Encrypts key.}\\
-
 C_{M} &= \text{Enc}_{K}(M)
 && \text{Encrypts message.}\\
-
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-
 n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
 && \text{Generate nonce.}\\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add nonce to list.}\\
-
 S &= \text{Sign}_{SS_{\text{Bob}}}(T||n||C_{K}||C_{M})
 && \text{Sign message.}\\
-
 \\
 \text{Bob sends to server} &: S, T, n, C_{K}, C_{M}\\
-
 \\
 \text{Server calculates} &:\\
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Bob}}}(S, T||n||C_{K}||C_{M})
 && \text{Verify message is from Bob.}\\
 &&& \text{If } S_{\text{Verify}} = 0 \text{, reject.}\\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify message is recent.}
 \\
-
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add old nonce to list.}
 \\
-
 (PS_{\text{Bob}}, PS_{\text{Alice}}) &\in B
 && \text{Verify Bob can message Alice.}
 \\
-
 \\
 \text{Server sends to Alice} &: S, T,n, C_{K}, C_{M}\\
-
+\displaybreak[4]
 \\
 \text{Alice calculates} &:\\
-
 S_{\text{Verify}} &= \text{Sign}^{-1}_{PS_{\text{Bob}}}(S, T||n||C_{K}||C_{M})
 && \text{Verify message is from Bob.}\\
 &&& \text{If } S_{\text{Verify}} = 0 \text{, reject.}\\
-
-T &\gt \text{Now}() - T_{\text{Threshold}}
+T &> \text{Now}() - T_{\text{Threshold}}
 && \text{Verify message is recent.}
 \\
-
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-
 N &= N \cup \{(n, PS_{\text{Bob}})\}
 && \text{Add old nonce to list.}
 \\
-
 (PS_{\text{Bob}}, PS_{\text{Alice}}) &\in B
 && \text{Verify Bob can message Alice.}
 \\
-
 K &= \text{KEM}^{-1}_{SK_{\text{Alice}}}(C_{K})
 && \text{Decrypt key.}\\
 M &= \text{Enc}^{-1}_{K}(C_{M})
 && \text{Decrypt message.}
 \end{align*}
-$$
