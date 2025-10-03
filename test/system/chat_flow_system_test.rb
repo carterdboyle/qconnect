@@ -2,169 +2,42 @@ require "application_system_test_case"
 
 class ChatFlowSystemTest < ApplicationSystemTestCase
 
-  # Helpers to drive terminal
-  def dump_terminal
-    terminal_lines = page.all("#terminal .line", minimum: 0).map(&:text)
-    puts "\n=== TERMINAL DUMP ===\n#{terminal_lines.join("\n")}\n=== /TERMINAL DUMP ===\n"
-    path = Rails.root.join("tmp/screenshots/terminal-#{Time.now.to_i}.png")
-    page.save_screenshot(path.to_s, full: true)
-    puts "[Screenshot Image]: #{path}"
-  end
-  
-  def after_teardown
-    dump_terminal unless passed?
-    super
-  end
-
-  def wait_until_local_messages(owner, peer, at_least:, timeout: 15)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-    last = -1
-    loop do
-      count = page.evaluate_async_script(<<~JS, owner, peer)
-        const [owner, peer] = arguments; const done = arguments[2];
-        const req = indexedDB.open("qconnect", 5);
-        req.onerror = () => done(-1);
-        req.onsuccess = () => {
-          const db  = req.result;
-          const tx  = db.transaction("messages", "readonly");
-          const os  = tx.objectStore("messages");
-          const idx = os.index("by_owner_peer_time_id");
-          const range = IDBKeyRange.bound([owner, peer, -Infinity, -Infinity],[owner, peer, Infinity, Infinity]);
-          let n = 0;
-          idx.openKeyCursor(range).onsuccess = e => { const c = e.target.result; if (c) { n++; c.continue(); } };
-          tx.oncomplete = () => done(n);
-        };
-      JS
-      puts "DEBUG IDB #{owner}⇄#{peer} count=#{count}" if count != last
-      last = count
-      break if count >= at_least
-      raise "IDB denied" if count == -1
-      raise "timeout waiting IDB=#{at_least}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-      sleep 0.1
-    end
-  end
-
-  def wait_for_text_in_terminal(regex, timeout: 15)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-    loop do
-      txt = page.evaluate_script("document.querySelector('#terminal')?.innerText || ''")
-      return true if txt&.match?(regex)
-      raise "timeout waiting for #{regex.inspect}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-      sleep 0.1
-    end
-  end
-
-  def term_exec(cmd)
-    # ensure the input exists and has focus
-    assert_selector "input", wait: 10
-    input = find "#input"
-
-    # set value and dispatch Enter, which the REPL listens for
-    page.execute_script(<<~JS, cmd)
-      (function(val){
-        const el = document.querySelector('#input')
-        el.value = val;
-        const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
-        el.dispatchEvent(e);
-      })(arguments[0]);
-    JS
-  end
-
-  def wait_for_terminal_line(text, timeout: 15)
-    assert_selector "#terminal .line", text: text, wait: timeout
-  end
-  
-  def expect_line(text)
-    assert_selector("#terminal .line", text: text)
-  end
-
-  def lines
-    page.all("#terminal .line").map(&:text)
-  end
-
-  def travel_browser_to(t_ms)
-    ts = t_ms.to_i
-    page.execute_script <<~JS, ts
-      (function(ts){
-        // Stash originals once
-        if (!window.__timeFreeze) {
-          window.__timeFreeze = {
-            RealDate: window.Date,
-            realNow: (window.performance && typeof performance.now === 'function')
-                    ? performance.now.bind(performance) : null
-          };
-        }
-        const RealDate = window.__timeFreeze.RealDate;
-
-        // Proper Date subclass that works with `new Date()` and `Date.now()`
-        class MockDate extends RealDate {
-          constructor(...args){ return args.length ? new RealDate(...args) : new RealDate(ts); }
-          static now(){ return ts; }
-        }
-        Object.setPrototypeOf(MockDate, RealDate);               // static members
-        Object.setPrototypeOf(MockDate.prototype, RealDate.prototype);
-
-        // Swap globals
-        window.Date = MockDate;
-
-        // Also pin performance.now so elapsed math stays consistent
-        if (window.__timeFreeze.realNow) {
-          const base = window.__timeFreeze.realNow();
-          const offset = ts - base;
-          performance.now = function(){ return window.__timeFreeze.realNow() + offset - base; };
-        }
-      })(arguments[0]);
-    JS
-  end
-
-  def restore_browser_clock
-    page.execute_script <<~JS
-      (function(){
-        const TF = window.__timeFreeze;
-        if (!TF) return;                 // nothing to restore
-        window.Date = TF.RealDate;
-        if (TF.realNow) performance.now = TF.realNow;
-        delete window.__timeFreeze;
-      })();
-    JS
-  end
-
-  def travel_both_to(t_ms)
-    page.execute_script("window.__TEST_FAKE_NOW_MS = #{t_ms.to_i}")
-    travel_browser_to(t_ms)
-  end
-
-  def back_to_real_time
-    page.execute_script("delete window.__TEST_FAKE_NOW_MS")
-    restore_browser_clock
-  end
-
   test "two users register, add, chat across days, and banners/dividers render correctly" do
     # visit the terminal in two sessions (alice / bob)
     using_session(:alice) do
       visit "/"
-      expect_line("QCONNECT SECURE CONSOLE")
+      snap_step!("alice_home")
+      wait_for_terminal_line("QCONNECT SECURE CONSOLE", snap: "alice_console_ready")
+
       term_exec "handle alice"
-      wait_for_terminal_line("- Handle set: alice")
-      term_exec "genkeys"; wait_for_terminal_line("- Generated ML-DSA-44 + ML-KEM-512 keys")
-      term_exec "register"; wait_for_terminal_line("- Registered ✔")
-      term_exec "login"; wait_for_terminal_line("- Logged in sucessfully ✔")
+      wait_for_terminal_line("- Handle set: alice", snap: "alice_handle")
+
+      term_exec "genkeys"
+      wait_for_terminal_line("- Generated ML-DSA-44 + ML-KEM-512 keys", snap: "alice_genkeys")
+
+      term_exec "register"
+      wait_for_terminal_line("- Registered ✔", snap: "alice_register")
+
+      term_exec "login"
+      wait_for_terminal_line("- Logged in sucessfully ✔", snap: "alice_login")
     end
 
     using_session(:bob) do
       visit "/"
+      snap_step!("bob_home")
       expect_line("QCONNECT SECURE CONSOLE")
+
       term_exec "handle bob"
-      wait_for_terminal_line("- Handle set: bob")
-      term_exec "genkeys"; wait_for_terminal_line("- Generated ML-DSA-44 + ML-KEM-512 keys")
-      term_exec "register"; wait_for_terminal_line("- Registered ✔")
-      term_exec "login"; wait_for_terminal_line("- Logged in sucessfully ✔")      
+      wait_for_terminal_line("- Handle set: bob", snap: "bob_handle")
+      term_exec "genkeys"; wait_for_terminal_line("- Generated ML-DSA-44 + ML-KEM-512 keys", snap: "bob_genkeys")
+      term_exec "register"; wait_for_terminal_line("- Registered ✔", snap: "bob_register")
+      term_exec "login"; wait_for_terminal_line("- Logged in sucessfully ✔", snap: "bob_login")      
     end
 
     # alice sends a contact request to Bob, and he accepts
     using_session(:alice) do
       term_exec "request bob Hey bob!"
-      wait_for_terminal_line("- Request sent to bob!")
+      wait_for_terminal_line("- Request sent to bob!", snap: "alice_request_bob")
     end
 
     using_session(:bob) do
@@ -173,7 +46,7 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
       # grab ID from the last requests line
       req_id = page.all("#terminal .line").map(&:text).grep(/id:\s+(\d+)/).last[/\d+/]
       term_exec "accept #{req_id}"
-      wait_for_terminal_line("added as a contact")
+      wait_for_terminal_line("added as a contact", snap: "bob_accept")
     end
 
     # Simulate a conversation that started a few days ago from alice -> bob
@@ -184,8 +57,9 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
       # Make "Chatting with @bob" and send two messages from the past day
       travel_browser_to(t_past_ms)
       term_exec "chat bob"
-      wait_for_terminal_line("Chatting with @bob!")
+      wait_for_terminal_line("Chatting with @bob!", snap: "alice_chat_open")
       term_exec "Hello from three days ago!"
+      wait_for_terminal_line("Hello from three days", snap: "alice_past_msg1")
       # res = page.evaluate_async_script(<<~JS, "bob", "Hello from three days ago!")
       #   (to, txt, done) => {
       #     window.sendMessageAndGetId(to, txt)
@@ -195,8 +69,9 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
       # JS
       # puts "sendMessageAndGetId => #{res.inspect}"
       term_exec "And another from the same day"
+      wait_for_terminal_line("And another from the same", snap: "alice_past_msg2")
       # Exit chat
-      term_exec "/q"
+      term_exec "/q", snap: "alice_chat_quit"
       back_to_real_time
     end
 
@@ -219,8 +94,9 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
         # assert_selector "#terminal .line", text: /2 new messages!/, wait: 15
         # assert_selector "#terminal .line", text: /^——/, wait: 15
 
+        snap_step!("bob_after_unread_render")
         # Leave chat without responding
-        term_exec "/q"
+        term_exec "/q", snap: "bob_chat_quit"
       rescue
         dump_terminal
         raise
@@ -230,9 +106,10 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
     # Afterwards Alice sends one new message TODAY
     using_session(:alice) do
       term_exec "chat bob"
-      wait_for_terminal_line("Chatting with @bob!")
+      wait_for_terminal_line("Chatting with @bob!", snap: "alice_chat_open_today")
       term_exec "A fresh message today"
-      term_exec "/q"
+      wait_for_terminal_line("A fresh message", snap: "alice_today_msg")
+      term_exec "/q", snap: "alice_chat_quit_today"
     end
 
     # Bob opens the chat again; expects banner for 1 new, then today's divider, then message
@@ -264,6 +141,7 @@ class ChatFlowSystemTest < ApplicationSystemTestCase
 
         assert one_new_idx < today_div_idx, "banner should print before today's divider"
         assert today_div_idx < msg_idx, "divider should appear before the message"
+        snap_step!("bob_after_asserts_2nd_open")
       rescue
         dump_terminal
         raise
