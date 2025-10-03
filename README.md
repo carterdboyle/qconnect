@@ -126,7 +126,7 @@ $$
 $$
 \begin{align*}
 \text{Sign}_{SS}(M) &= S && \text{Signs message } M \text{ using private key } SS \text{ creating signature } S \text{.}\\
-\text{Sign}_{PS}^{-1}(S, M) &= \{0,1\} && \text{Verifies message } M \text{ matches signature } S \text{ using public key } PS \text{.}\\
+\text{Sign}_{PS}^{-1}(S, M) &= \\{0,1\\} && \text{Verifies message } M \text{ matches signature } S \text{ using public key } PS \text{.}\\
 &&& \text{Outputs 1 when signature matches.}\\
 \\
 \text{KEM}_{PK}(K) &= C && \text{Encrypts the given key } K \text{ using public key } PK \text{.}\\
@@ -153,10 +153,10 @@ $$
 \\
 \\
 \text{Server calculates} &:\\
-M &= \{0,1\}^{128}
+M &= \\{0,1\\}^{128}
 && \text{Generate signing challenge.}
 \\
-K &= \{0,1\}^{128}
+K &= \\{0,1\\}^{128}
 && \text{Generate KEM challenge.}
 \\
 C &= \text{KEM}_{PK_{\text{Bob}}}(K)
@@ -204,16 +204,16 @@ $$
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
+n &= \\{0,1\\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
 && \text{Generate nonce.}
 \\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add nonce to list.}
 \\
 S &= \text{Sign}_{SS_{\text{Bob}}}(T||n||PS_{\text{Alice}})
 && \text{Sign contact request.}
 \\
-B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
+B &= B \cup \\{(PS_{\text{Alice}}, PS_{\text{Bob}})\\}
 && \text{Mark Alice as able to send messages to Bob.}
 \\
 \\
@@ -230,10 +230,10 @@ T &\gt \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add old nonce to list.}
 \\
-B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
+B &= B \cup \\{(PS_{\text{Alice}}, PS_{\text{Bob}})\\}
 && \text{Mark Alice as able to send messages to Bob.}
 \\
 \\
@@ -254,26 +254,26 @@ T &\gt \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add old nonce to list.}
 \\
-B &= B \cup \{(PS_{\text{Alice}}, PS_{\text{Bob}})\}
+B &= B \cup \\{(PS_{\text{Alice}}, PS_{\text{Bob}})\\}
 && \text{Mark Alice as able to send messages to Bob.}
 \\
 \\
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Alice}}) \notin N
+n &= \\{0,1\\}^{128} \text{ s.t. } (n, PS_{\text{Alice}}) \notin N
 && \text{Generate nonce.}
 \\
-N &= N \cup \{(n, PS_{\text{Alice}})\}
+N &= N \cup \\{(n, PS_{\text{Alice}})\\}
 && \text{Add nonce to list.}
 \\
 S &= \text{Sign}_{SS_{\text{Alice}}}(T||n||PS_{\text{Bob}})
 && \text{Sign contact request.}
 \\
-B &= B \cup \{(PS_{\text{Bob}}, PS_{\text{Alice}})\}
+B &= B \cup \\{(PS_{\text{Bob}}, PS_{\text{Alice}})\\}
 && \text{Mark Bob as able to send messages to Alice.}\\
 \\
 \text{Alice sends to server} &: S, T, n, PS_{\text{Bob}}
@@ -291,7 +291,7 @@ T &\gt \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Alice}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Alice}})\}
+N &= N \cup \\{(n, PS_{\text{Alice}})\\}
 && \text{Add old nonce to list.}
 \\
 B &= B \cup {(PS_{\text{Bob}}, PS_{\text{Alice}})}
@@ -311,7 +311,7 @@ T &\gt \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Alice}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Alice}})\}
+N &= N \cup \\{(n, PS_{\text{Alice}})\\}
 && \text{Add old nonce to list.}
 \\
 B &= B \cup {(PS_{\text{Bob}}, PS_{\text{Alice}})}
@@ -364,7 +364,7 @@ $$
 $$
 \begin{align*}
 \text{Bob calculates} &:\\
-K &= \{0, 1\}^{n}
+K &= \\{0, 1\\}^{n}
 && \text{Generates key of length } n \text{.}\\
 C_{K} &= \text{KEM}_{PK_{\text{Alice}}}(K)
 && \text{Encrypts key.}\\
@@ -373,9 +373,9 @@ C_{M} &= \text{Enc}_{K}(M)
 T &= \text{Now}()
 && \text{Get current timestamp.}
 \\
-n &= \{0,1\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
+n &= \\{0,1\\}^{128} \text{ s.t. } (n, PS_{\text{Bob}}) \notin N
 && \text{Generate nonce.}\\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add nonce to list.}\\
 S &= \text{Sign}_{SS_{\text{Bob}}}(T||n||C_{K}||C_{M})
 && \text{Sign message.}\\
@@ -392,7 +392,7 @@ T &> \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add old nonce to list.}
 \\
 (PS_{\text{Bob}}, PS_{\text{Alice}}) &\in B
@@ -415,7 +415,7 @@ T &> \text{Now}() - T_{\text{Threshold}}
 (n, PS_{\text{Bob}}) & \notin N
 && \text{Verify nonce is new.}
 \\
-N &= N \cup \{(n, PS_{\text{Bob}})\}
+N &= N \cup \\{(n, PS_{\text{Bob}})\\}
 && \text{Add old nonce to list.}
 \\
 (PS_{\text{Bob}}, PS_{\text{Alice}}) &\in B
